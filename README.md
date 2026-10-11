@@ -76,7 +76,7 @@ Before sending work for review: typecheck, lint, `npx jest --ci`, `npx expo inst
 | `api/` | One file per backend area (auth, tasks, tickets, sprints, timesheet, ...). Axios client, error mapping (`AppError`), tolerant response parsers. No UI. |
 | `hooks/` | TanStack Query hooks and mutations (`useSessionMutation` drops late responses after logout), timer, menu access, project sync, today key. |
 | `features/` | Screens by area: dashboard, tasks, qa, myday, timer, tickets, sprints, timesheet, projects. |
-| `navigation/` | Root stack, bottom tabs (at most 5), module registry (`modules.ts`), More screen. |
+| `navigation/` | Root stack, bottom tabs (at most 5), module registry (`modules.ts`), the navigation drawer (`DrawerContent.tsx`, shell in `components/ui/Drawer.tsx`). |
 | `components/` | Shared UI primitives (`components/ui`), `RichText` (whitelist HTML renderer), error boundary, offline banner. |
 | `store/` | Zustand: auth (session, epoch), selected project, UI guards. The JWT lives in `expo-secure-store` only. |
 | `theme/` | Design tokens mirroring the web (light and dark). No hardcoded colors outside `tokens.ts`. |
@@ -90,14 +90,14 @@ are ignored.
 
 ## Module gating (what a user sees)
 
-A module is offered (tab, or entry in More) only when BOTH hold:
+A module is offered (bottom-bar item, or entry in the drawer) only when BOTH hold:
 1. the server grants its menu URL (`canView(menu)` from `GET /menu-access/my`), and
 2. the menu is not hidden from mobile (`is_visible_on_mobile !== false`).
 
 Access is never invented on the client. At most 4 modules become tabs (registry order:
-Dashboard, Tasks, My Day, QA, Tickets, Sprints) plus a More tab; the rest open from More.
+Dashboard, Tasks, My Day, QA, Tickets, Sprints) plus a fixed Menu item that opens the drawer; the drawer lists ALL granted modules.
 Profile and Timesheet are pushed screens. Granted menus with no mobile screen are listed in
-More as "Not available in this version yet".
+the drawer as a collapsed "Not available in this version yet" list.
 
 Deliberate exceptions, documented in code:
 - Timesheet is NOT gated by a `/timesheet` menu (an old migration deleted it; the server only
@@ -118,14 +118,40 @@ rationale and computed contrast ratios are in `docs/UX_DESIGN_PLAN.md`, asserted
   ready after 2.5s. Icons are Ionicons from `@expo/vector-icons` (same `useFonts` call).
 - Dark mode cards use a border instead of a shadow (black shadows are invisible on dark surfaces).
 - Role-aware tab ORDER (`navigation/moduleTabs.ts`) is presentation only: tabs still come from server grants +
-  `is_visible_on_mobile`, 4 modules + More.
+  `is_visible_on_mobile`, 4 modules + Menu.
 - Animations are core `Animated` only, skipped under Jest and when the OS asks to reduce motion.
 - Ripple overlays (`ripple`, `rippleOnBrand`) are alpha colours so Android ripples never hide the control underneath.
 - Support floor = Expo SDK 54 defaults: Android minSdk 24, iOS 15.1 (RN 0.81 `libs.versions.toml` / `min_ios_version_supported`).
 
+### Navigation drawer + bottom bar (after the pilot crash report)
+
+- Bottom bar = up to 4 role-ordered modules + a fixed **Menu** item (5 items max, no More tab). Menu and the hamburger in every tab
+  header open the drawer; pushed screens keep Back. Spec: `docs/NAV_DRAWER_DESIGN.md`.
+- The drawer (core RN `Modal` + `Animated`, no new dependency; reduce-motion aware; Android Back, scrim and the Close button close
+  it) lists ALL granted, mobile-visible modules (server `menu_name`), marks the current one, shows the account block (Profile),
+  the collapsed web-only list, the My Day "Not filed yet" cue and a fixed Sign out. Every action that leaves the screen runs the
+  My Day dirty guard (`navigation/dirtyGuard.ts`); sign-out reuses the Profile flow (`hooks/useSignOut.ts`).
+- Deferred: swipe-left-to-close and edge-swipe-to-open (not reliable without gesture-handler). The theme switch stays in Profile.
+- Drawer a11y: the offline notice inside the drawer is visible but not a live region (the strip beneath already announced it). Moving
+  screen-reader focus to the first row on open and back to the opener on close is NOT implemented: it cannot be verified without a
+  device (see DEVICE_SMOKE_TEST M).
+- Crash diagnostics (`lib/errorReporter.ts`): a sanitised global error reporter and an error screen with a "Details" toggle (code +
+  short message). Redaction covers what the Details screen and the `[TT-ERROR]` log line show (tokens, Bearer/Basic, JWT, e-mails,
+  URL userinfo, API keys, cookies, secret query parameters, quoted values, long base64/hex runs, user folders in file paths) and is
+  linear-time. It does NOT cover raw text React or the default Android handlers may still write to logcat: review `crash.txt`
+  before sharing it. To report a crash on Android: see DEVICE_SMOKE_TEST.md section M.
+- Swallowed fatals are capped: with an error screen mounted in a release build, a fatal JS error outside rendering is shown there
+  instead of killing the app, but only 3 times per 60 seconds; beyond that the default handler runs, so a persistent cause crashes
+  cleanly instead of leaving a half-working app behind the error screen.
+- Task Board list (`features/tasks/TasksScreen.tsx`): sticky section headers are iOS-only (`Platform.OS === 'ios'`; same on Sprints),
+  `removeClippedSubviews` is off on every list (a test scans the source), and the SectionList never changes shape under the native
+  layer: `sections` is never empty (one placeholder section carries the loading/error/empty block in its footer), so the chips
+  header stays mounted while filters or search change. Each row sits in its own error boundary (fallback offers "Open task" and
+  retries by itself when that task's data changes). Task Detail keeps its sticky tab strip (ScrollView `stickyHeaderIndices`).
+
 ### Pilot round (before the first test APK)
 
-- Android bottom inset: modules pushed from More and Profile now add the bottom safe-area inset to their scrolling content
+- Android bottom inset: modules pushed from the drawer and Profile now add the bottom safe-area inset to their scrolling content
   (`useScreenBottomPadding` for lists, `Screen` for scroll views) when no tab bar clears it (edge-to-edge).
 - Keyboard: `useKeyboardOverlap` guards NaN/missing `screenY`, ignores a measure that lands after the keyboard hid, and follows
   `keyboardWillChangeFrame` on iOS. Time entry: `maskTime` zero-pads when the first digit is 3-9 (`930` becomes `09:30`).
@@ -146,7 +172,7 @@ rationale and computed contrast ratios are in `docs/UX_DESIGN_PLAN.md`, asserted
 
 - One header per screen (`PageHeader`): the six module screens (Dashboard, Tasks, My Day, QA, Tickets, Sprints) render a
   `ModuleHeader` themselves in EVERY state (loading, error, empty, content), as `tab` in the tab bar or `push` (with Back)
-  when opened from More; detail screens, Timesheet, Profile and More get the header from their host. The header also carries
+  when opened from the drawer; detail screens, Timesheet and Profile get the header from their host. The header also carries
   the global offline and running-timer strips.
 - Tasks: one toolbar row (search + Filters sheet with live "Show N tasks"), Mine (default OFF; matches dev/QA/support OWNERS only),
   grouped list, redesigned `TaskCard` (urgency-aware labelled due date, assignee names as text, Move in the footer).

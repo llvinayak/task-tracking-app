@@ -128,7 +128,16 @@ export function parseTask(raw: unknown, withReady = true): Task | null {
   };
 }
 
-export const parseTasks = (raw: unknown): Task[] => mapArray(raw, parseTask);
+/** A list never carries the same task twice (a duplicate id would collide as a React list key): first one wins. */
+export const parseTasks = (raw: unknown): Task[] => {
+  const seen = new Set<number>();
+  return mapArray(raw, (r) => {
+    const t = parseTask(r);
+    if (!t || seen.has(t.id)) return null;
+    seen.add(t.id);
+    return t;
+  });
+};
 
 /* ── Task detail ─────────────────────────────────────────────────────────── */
 

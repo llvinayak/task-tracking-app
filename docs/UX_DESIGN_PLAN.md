@@ -1,3 +1,5 @@
+> **Superseded: the More screen was replaced by the navigation drawer. See `docs/NAV_DRAWER_DESIGN.md`.** Wherever this plan mentions a "More" tab or screen, read "the drawer" (opened from the fixed Menu item in the bottom bar and the header hamburger).
+
 # TaskTracking mobile: UX design plan (Phase 2)
 
 Owner: UI/UX designer. Implementer: senior-react-native-developer. Status: binding lead decisions applied.

@@ -104,21 +104,21 @@ describe('tab bar with every module granted, on a 320pt-wide screen', () => {
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
-    const names = ['Dashboard', 'Tasks', 'My Day', 'QA', 'Tickets', 'Sprints', 'Profile', 'More'];
+    const names = ['Dashboard', 'Tasks', 'My Day', 'QA', 'Tickets', 'Sprints', 'Profile', 'More', 'Menu'];
     const present = names.filter((n) => screen.queryByLabelText(n));
-    expect(present).toEqual(['Dashboard', 'Tasks', 'My Day', 'QA', 'More']);
+    expect(present).toEqual(['Dashboard', 'Tasks', 'My Day', 'QA', 'Menu']); // no More tab any more: Menu opens the drawer
     expect(present.length).toBeLessThanOrEqual(5);
     for (const n of present) expect(n.length).toBeLessThanOrEqual(9); // fits ~64pt per tab at 320pt
     expect(Dimensions.get('window').width).toBe(320);
   });
 
-  it('overflow modules (Tickets, Sprints) and Profile open from More as pushed screens with a Back button', async () => {
+  it('overflow modules (Tickets, Sprints) and Profile open from the drawer as pushed screens with a Back button', async () => {
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn();
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
 
     // Tickets
@@ -130,6 +130,8 @@ describe('tab bar with every module granted, on a 320pt-wide screen', () => {
     await settle();
 
     // Sprints
+    fireEvent.press(tab('Menu'));
+    await settle();
     fireEvent.press(await screen.findByLabelText(/^Sprints\. View only\. Opens Sprints/));
     await settle();
     expect(await screen.findByText('No sprints')).toBeTruthy();
@@ -137,13 +139,17 @@ describe('tab bar with every module granted, on a 320pt-wide screen', () => {
     await settle();
 
     // Profile
-    fireEvent.press(await screen.findByLabelText('Profile and settings'));
+    fireEvent.press(tab('Menu'));
+    await settle();
+    fireEvent.press(await screen.findByTestId('open-profile'));
     await settle();
     expect(await screen.findByText('ACCOUNT')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
     fireEvent.press(screen.getByRole('button', { name: 'Back' }));
     await settle();
-    expect(await screen.findByLabelText('Profile and settings')).toBeTruthy();
+    fireEvent.press(tab('Menu'));
+    await settle();
+    expect(await screen.findByTestId('open-profile')).toBeTruthy();
   });
 });
 
@@ -172,26 +178,26 @@ describe('gating for the new modules', () => {
     expect(sprints.getSprints).not.toHaveBeenCalled();
   });
 
-  it('granted but hidden from mobile (is_visible_on_mobile=false) -> not offered anywhere, not even in More', async () => {
+  it('granted but hidden from mobile (is_visible_on_mobile=false) -> not offered anywhere, not even in the drawer', async () => {
     menus.getMyMenus.mockResolvedValue([M.dashboard, { ...M.tickets, is_visible_on_mobile: false }, { ...M.sprints, is_visible_on_mobile: false }]);
     signedIn();
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
     expect(screen.queryByLabelText('Tickets')).toBeNull();
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
     expect(screen.queryByText('Tickets')).toBeNull();
     expect(screen.queryByText('Sprints')).toBeNull();
   });
 
-  it('a granted module that does not fit is listed in More as OPENABLE, never as "not available"', async () => {
+  it('a granted module that does not fit is listed in the drawer as OPENABLE, never as "not available"', async () => {
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn();
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
     expect(await screen.findByLabelText(/^Tickets\. View only\. Opens Tickets/)).toBeTruthy();
     expect(screen.queryByText('Not available in this version yet')).toBeNull();

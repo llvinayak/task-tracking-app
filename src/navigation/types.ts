@@ -6,12 +6,12 @@ export type AuthStackParamList = {
 export type ModuleName = 'Dashboard' | 'Tasks' | 'MyDay' | 'QA' | 'Tickets' | 'Sprints';
 
 /**
- * Bottom tabs: at most MAX_MODULE_TABS granted modules + More (<= 5 tabs, so
+ * Bottom tabs: at most MAX_MODULE_TABS granted modules + Menu (<= 5 items, so
  * labels stay readable on small phones). Granted modules beyond the limit, and
- * Profile, open from More as pushed screens.
+ * Profile, open from the drawer as pushed screens.
  */
 export type AppTabParamList = Record<ModuleName, undefined> & {
-  More: undefined;
+  Menu: undefined;
 };
 
 export type RootStackParamList = {

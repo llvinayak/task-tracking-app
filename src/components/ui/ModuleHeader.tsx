@@ -5,7 +5,7 @@ import { HeaderVariantContext } from './Screen';
 
 /**
  * The header a self-headed module screen passes to `<Screen header=...>`: `tab`
- * inside the tab bar, `push` (with Back) when the same screen is pushed from More.
+ * inside the tab bar, `push` (with Back) when the same screen is pushed from the drawer.
  * Render it in EVERY state (loading, error, empty, content) so the title, the
  * global strips and Back never disappear.
  */

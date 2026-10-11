@@ -89,13 +89,14 @@ describe('RootNavigator (protected navigation)', () => {
     await settle();
     expect(tab('Dashboard')).toBeTruthy();
     expect(tab('Tasks')).toBeTruthy();
-    expect(tab('More')).toBeTruthy();
-    expect(screen.queryByLabelText('Profile')).toBeNull(); // Profile lives in More, not in the tab bar
+    expect(tab('Menu')).toBeTruthy();
+    expect(screen.queryByLabelText('More')).toBeNull(); // the More tab is gone: Menu opens the drawer
+    expect(screen.queryByLabelText('Profile')).toBeNull(); // Profile lives in the drawer, not in the tab bar
 
     // Not-yet-built modules are listed as unavailable, hidden menus are not listed at all.
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
-    expect(screen.getByLabelText('Profile and settings')).toBeTruthy();
+    expect(screen.getByTestId('open-profile')).toBeTruthy();
     // Web-only menus sit behind a collapsed disclosure: one title, rows only after expanding.
     expect(await screen.findByText('Not available in this version yet')).toBeTruthy();
     expect(screen.queryByText('Calendar')).toBeNull();
@@ -140,7 +141,7 @@ describe('RootNavigator (protected navigation)', () => {
     await settle();
   });
 
-  it('empty menu list -> More shows an empty state', async () => {
+  it('empty menu list -> the Menu route shows an empty state with an Open menu button', async () => {
     menus.getMyMenus.mockResolvedValue([]);
     signedIn();
     renderWithProviders(<RootNavigator />, { navigation: true });

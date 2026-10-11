@@ -40,7 +40,7 @@ export const LABEL_IN_NAME_ALLOWLIST: readonly RegExp[] = [
   /^Open /,
   /^Move to /, // status sheet rows
   /^Edit /,
-  /^Profile and settings$/, // More: the row's visible secondary lines (name, role) are not part of its label
+  /^Profile and settings\. /, // drawer account block: the label leads with what it does, then contains the visible name and role
 ];
 
 export interface LabelViolation {

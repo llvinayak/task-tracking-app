@@ -296,7 +296,7 @@ export function TimeEntrySheet({
           {tasks.isError ? <ErrorState message={getErrorMessage(tasks.error)} onRetry={() => void tasks.refetch()} /> : null}
           {mode === 'all' && debounced.trim().length < 2 ? <Text tone="muted">Type at least 2 characters.</Text> : null}
           {tasks.data && tasks.data.length === 0 ? <Text tone="muted">No tasks found.</Text> : null}
-          <FlatList
+          <FlatList removeClippedSubviews={false}
             data={tasks.data ?? []}
             keyExtractor={(x: Task) => String(x.id)}
             style={styles.pickerList}

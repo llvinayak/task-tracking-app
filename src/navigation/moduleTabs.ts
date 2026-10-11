@@ -3,7 +3,7 @@ import type { MyMenu } from '@/api/types';
 import type { MobileModule } from './modules';
 import type { ModuleName } from './types';
 
-/** Bottom tabs = at most this many modules + More. Keeps labels readable at 320pt wide. */
+/** Bottom tabs = at most this many modules + the fixed Menu item. Keeps labels readable at 320pt wide. */
 export const MAX_MODULE_TABS = 4;
 
 /**
@@ -47,7 +47,7 @@ export function grantedModules(
   return [...granted].sort((a, b) => rank(a) - rank(b));
 }
 
-/** First MAX_MODULE_TABS granted modules are tabs; the rest are reachable from More. */
+/** First MAX_MODULE_TABS granted modules are tabs; the rest are reachable from the drawer. */
 export function splitModules(granted: readonly MobileModule[]): { tabs: MobileModule[]; overflow: MobileModule[] } {
   return { tabs: granted.slice(0, MAX_MODULE_TABS), overflow: granted.slice(MAX_MODULE_TABS) };
 }

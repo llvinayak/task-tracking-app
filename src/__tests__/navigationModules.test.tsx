@@ -79,17 +79,17 @@ beforeEach(() => {
 afterEach(settle);
 
 describe('module registration: My Day and QA', () => {
-  it('registers tabs for the first 4 granted modules; the rest (and Profile) open from More', async () => {
+  it('registers bar items for the first 4 granted modules + Menu; the rest (and Profile) open from the drawer', async () => {
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn();
     renderWithProviders(<RootNavigator />, { navigation: true });
     expect(await screen.findByText('Active tasks')).toBeTruthy();
     await settle();
-    for (const t of ['Dashboard', 'Tasks', 'My Day', 'QA', 'More']) expect(tab(t)).toBeTruthy();
-    // Sprints is built now, but the bar holds at most 4 modules + More: it opens from More.
+    for (const t of ['Dashboard', 'Tasks', 'My Day', 'QA', 'Menu']) expect(tab(t)).toBeTruthy();
+    // Sprints is built now, but the bar holds at most 4 modules + Menu: it opens from the drawer.
     expect(screen.queryByLabelText('Sprints')).toBeNull();
 
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
     expect(await screen.findByText('Sprints')).toBeTruthy();
     // Built modules (even the overflow one) are not labelled unavailable.
@@ -207,7 +207,7 @@ describe('unsaved My Day edits guard the tab bar', () => {
 });
 
 describe('M2: a failed background menus refetch keeps the tabs', () => {
-  it('stale menus stay usable; More shows a banner; only an initial failure shows the error screen', async () => {
+  it('stale menus stay usable; the drawer shows a banner; only an initial failure shows the error screen', async () => {
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn();
     const { queryClient } = renderWithProviders(<RootNavigator />, { navigation: true });
@@ -222,7 +222,7 @@ describe('M2: a failed background menus refetch keeps the tabs', () => {
     expect(tab('Dashboard')).toBeTruthy(); // navigator not replaced by the error screen
     expect(screen.queryByText("Couldn't load your menus")).toBeNull();
 
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
     expect(await screen.findByTestId('stale-banner')).toBeTruthy();
     expect(screen.getByText('Sprints')).toBeTruthy();
@@ -255,8 +255,9 @@ describe('running timer strip in the screen header', () => {
     renderWithProviders(<RootNavigator />, { navigation: true });
     expect(await screen.findByTestId('running-timer-banner')).toBeTruthy();
     await settle();
-    fireEvent.press(tab('More'));
+    fireEvent.press(tab('Menu'));
     await settle();
-    expect(screen.getByTestId('running-timer-banner')).toBeTruthy();
+    // The drawer is open over the screen: its header (and the timer strip in it) is still mounted.
+    expect(screen.getByTestId('running-timer-banner', { includeHiddenElements: true })).toBeTruthy();
   });
 });

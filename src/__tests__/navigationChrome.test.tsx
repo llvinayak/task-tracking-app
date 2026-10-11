@@ -118,7 +118,7 @@ describe('role-aware tab order (presentation only)', () => {
 });
 
 describe('tab bar chrome', () => {
-  it('a Client with 2 granted modules gets 2 tabs + More, Tickets first', async () => {
+  it('a Client with 2 granted modules gets 2 bar items + Menu, Tickets first', async () => {
     menus.getMyMenus.mockResolvedValue([M.dashboard, M.tickets]);
     signedIn(6);
     renderWithProviders(<RootNavigator />, { navigation: true });
@@ -126,18 +126,19 @@ describe('tab bar chrome', () => {
     await settle();
     expect(screen.getByLabelText('Tickets')).toBeTruthy();
     expect(screen.getByLabelText('Dashboard')).toBeTruthy();
-    expect(screen.getByLabelText('More')).toBeTruthy();
+    expect(screen.getByLabelText('Menu')).toBeTruthy();
+    expect(screen.queryByLabelText('More')).toBeNull();
     expect(screen.queryByLabelText('Tasks')).toBeNull();
   });
 
-  it('PM: My Day is in More, so the unfiled dot moves to More (label says so) and no numeric badge exists', async () => {
+  it('PM: My Day is drawer-only, so the unfiled dot moves to Menu (label says so) and no numeric badge exists', async () => {
     (dailyApi.getPendingDay as jest.Mock).mockResolvedValue(
       dailyApi.parsePending({ date: '2026-10-10', needsSubmit: true, trackedMinutes: 30, taskCount: 1 }),
     );
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn(2);
     renderWithProviders(<RootNavigator />, { navigation: true });
-    expect(await screen.findByLabelText('More, My Day not filed yet')).toBeTruthy();
+    expect(await screen.findByLabelText('Menu, My Day not filed yet')).toBeTruthy();
     await settle();
     expect(screen.queryByLabelText('My Day, not filed yet')).toBeNull();
     expect(screen.queryByLabelText('My Day')).toBeNull(); // not a tab for a PM
@@ -152,28 +153,30 @@ describe('tab bar chrome', () => {
     signedIn(5);
     renderWithProviders(<RootNavigator />, { navigation: true });
     expect(await screen.findByLabelText('My Day, not filed yet')).toBeTruthy();
-    expect(screen.getByLabelText('More')).toBeTruthy();
+    expect(screen.getByLabelText('Menu')).toBeTruthy();
   });
 });
 
-describe('More', () => {
-  it('Profile first; only modules that are NOT tabs; web-only menus collapsed', async () => {
+describe('Drawer content', () => {
+  it('Profile first; ALL granted modules (tab ones too), current one marked; web-only menus collapsed', async () => {
     menus.getMyMenus.mockResolvedValue([...ALL, menu({ id: 9, menu_name: 'Calendar', menu_url: '/calendar' })]);
     signedIn(5);
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
-    await pressTab('More');
-    // One heading "More" (PageHeader), no "for <name>" and no explanatory paragraph.
-    expect(screen.getAllByText('More').length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText(/^More for /)).toBeNull();
-    expect(screen.getByLabelText('Profile and settings')).toBeTruthy();
+    await pressTab('Menu');
+    expect(screen.getByTestId('open-profile')).toBeTruthy();
     expect(screen.getByText('MODULES')).toBeTruthy();
-    // Overflow modules for a developer: Tickets and Sprints. Tab modules are not repeated.
+    // Every granted module is listed, bar items included, in role order, with the server's menu_name.
+    const order = ['Dashboard', 'Tasks', 'MyDay', 'QA', 'Tickets', 'Sprints'];
+    for (const n of order) expect(screen.getByTestId(`drawer-item-${n}`)).toBeTruthy();
+    expect(screen.getByText('Task Board')).toBeTruthy();
     expect(screen.getByLabelText(/^Tickets\. View only\. Opens Tickets/)).toBeTruthy();
     expect(screen.getByLabelText(/^Sprints\. View only\. Opens Sprints/)).toBeTruthy();
-    expect(screen.queryByLabelText(/Opens Tasks/)).toBeNull();
-    expect(screen.queryByLabelText(/Opens Dashboard/)).toBeNull();
+    // The landing module is the current one.
+    expect(screen.getByTestId('drawer-item-Dashboard').props.accessibilityState).toMatchObject({ selected: true });
+    expect(screen.getByTestId('drawer-item-Dashboard').props.accessibilityLabel).toMatch(/Current page$/);
+    expect(screen.getByTestId('drawer-item-Tasks').props.accessibilityState).toMatchObject({ selected: false });
     // No visible access badges.
     expect(screen.queryByText('Can edit')).toBeNull();
     expect(screen.queryByText('View only')).toBeNull();
@@ -186,15 +189,17 @@ describe('More', () => {
     expect(screen.getByTestId('web-only-toggle').props.accessibilityState).toMatchObject({ expanded: true });
   });
 
-  it('no MODULES section when every granted module is a tab', async () => {
-    menus.getMyMenus.mockResolvedValue([M.dashboard, M.tasks]);
+  it('opens the module for the pressed row: a bar item switches the tab, closing the drawer', async () => {
+    menus.getMyMenus.mockResolvedValue(ALL);
     signedIn(5);
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
-    await pressTab('More');
-    expect(screen.queryByText('MODULES')).toBeNull();
-    expect(screen.getByLabelText('Profile and settings')).toBeTruthy();
+    await pressTab('Menu');
+    fireEvent.press(screen.getByTestId('drawer-item-Tasks'));
+    await settle();
+    expect(screen.queryByTestId('drawer-item-Tasks')).toBeNull(); // closed
+    expect(await screen.findByLabelText('Search tasks')).toBeTruthy(); // on the Tasks screen
   });
 });
 
@@ -213,8 +218,8 @@ describe('single header with global strips', () => {
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
-    await pressTab('More');
-    fireEvent.press(await screen.findByLabelText('Profile and settings'));
+    await pressTab('Menu');
+    fireEvent.press(await screen.findByTestId('open-profile'));
     await settle();
     expect(await screen.findByText('ACCOUNT')).toBeTruthy();
     expect(screen.getByTestId('running-timer-banner')).toBeTruthy();
@@ -232,8 +237,8 @@ describe('single header with global strips', () => {
     expect(screen.queryByTestId('offline-banner')).toBeNull();
     act(() => onlineManager.setOnline(false));
     expect(screen.getByTestId('offline-banner')).toBeTruthy();
-    await pressTab('More');
-    fireEvent.press(await screen.findByLabelText('Profile and settings'));
+    await pressTab('Menu');
+    fireEvent.press(await screen.findByTestId('open-profile'));
     await settle();
     expect(await screen.findByText('ACCOUNT')).toBeTruthy();
     expect(screen.getByTestId('offline-banner')).toBeTruthy();
@@ -241,18 +246,19 @@ describe('single header with global strips', () => {
   });
 });
 
-describe('More: My Day cue', () => {
-  it('a PM sees "Not filed yet" on the My Day row inside More (the tab dot is not available there)', async () => {
+describe('Drawer: My Day cue', () => {
+  it('a PM sees "Not filed yet" on the My Day row inside the drawer (the bar dot is on Menu)', async () => {
     (dailyApi.getPendingDay as jest.Mock).mockResolvedValue(
       dailyApi.parsePending({ date: '2026-10-10', needsSubmit: true, trackedMinutes: 30, taskCount: 1 }),
     );
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn(2);
     renderWithProviders(<RootNavigator />, { navigation: true });
-    await screen.findByLabelText('More, My Day not filed yet');
-    fireEvent.press(screen.getByLabelText('More, My Day not filed yet'));
+    await screen.findByLabelText('Menu, My Day not filed yet');
+    fireEvent.press(screen.getByLabelText('Menu, My Day not filed yet'));
     await settle();
-    expect(await screen.findByText('Not filed yet')).toBeTruthy();
+    expect(await screen.findByLabelText(/Opens My Day\. Not filed yet/)).toBeTruthy();
+    expect(screen.getByText('Not filed yet', { includeHiddenElements: true })).toBeTruthy(); // visible badge (hidden from AT: the row label says it)
     expect(screen.getByLabelText(/Opens My Day\. Not filed yet/)).toBeTruthy();
   });
 
@@ -260,23 +266,23 @@ describe('More: My Day cue', () => {
     menus.getMyMenus.mockResolvedValue(ALL);
     signedIn(2);
     renderWithProviders(<RootNavigator />, { navigation: true });
-    await screen.findByLabelText('More');
-    await pressTab('More');
+    await screen.findByLabelText('Menu');
+    await pressTab('Menu');
     expect(await screen.findByLabelText(/Opens My Day$/)).toBeTruthy();
-    expect(screen.queryByText('Not filed yet')).toBeNull();
+    expect(screen.queryByText('Not filed yet', { includeHiddenElements: true })).toBeNull();
   });
 });
 
 
 describe('Label in Name on the shell', () => {
-  it('tab bar, More (profile row, modules, web-only disclosure)', async () => {
+  it('tab bar, drawer (profile row, modules, web-only disclosure)', async () => {
     menus.getMyMenus.mockResolvedValue([...ALL, menu({ id: 9, menu_name: 'Calendar', menu_url: '/calendar' })]);
     signedIn(5);
     renderWithProviders(<RootNavigator />, { navigation: true });
     await screen.findByText('Active tasks');
     await settle();
     expect(labelInNameViolations()).toEqual([]);
-    await pressTab('More');
+    await pressTab('Menu');
     fireEvent.press(screen.getByTestId('web-only-toggle'));
     expect(labelInNameViolations()).toEqual([]);
   });

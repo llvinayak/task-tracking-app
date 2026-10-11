@@ -6,7 +6,8 @@ import React, { useEffect, useMemo } from 'react';
 import { AppState, Platform, View, type AppStateStatus } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorBoundary, FatalErrorGate } from '@/components/ErrorBoundary';
+import { installGlobalErrorHandler } from '@/lib/errorReporter';
 import { isApiConfigured } from '@/config/env';
 import { wireNetInfo } from '@/lib/connectivity';
 import { ToastProvider } from '@/components/ui';
@@ -71,6 +72,9 @@ function Shell() {
   );
 }
 
+// Capture fatal/unhandled JS errors (sanitised) as early as possible; the default handler stays in the chain.
+installGlobalErrorHandler();
+
 export default function App() {
   const { fontsLoaded, ready } = useAppFonts();
   // The native splash stays visible until fonts are ready (or 2.5s elapse).
@@ -80,6 +84,7 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider fontsLoaded={fontsLoaded}>
         <ErrorBoundary>
+          <FatalErrorGate>
           {isApiConfigured() ? (
             <QueryClientProvider client={queryClient}>
               <ToastProvider>
@@ -89,6 +94,7 @@ export default function App() {
           ) : (
             <ConfigErrorScreen />
           )}
+          </FatalErrorGate>
         </ErrorBoundary>
       </ThemeProvider>
     </SafeAreaProvider>

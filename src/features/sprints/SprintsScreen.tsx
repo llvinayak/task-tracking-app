@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
-import { RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { Platform, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
 import { groupSprintsByStatus, type Sprint } from '@/api/sprintsApi';
@@ -91,10 +91,10 @@ export function SprintsScreen() {
     body = <EmptyState icon="flash-outline" title="No sprints" message={selected ? `No sprints for ${selected.name}.` : 'Sprints will appear here.'} />;
   } else {
     body = (
-      <SectionList
+      <SectionList removeClippedSubviews={false}
         sections={groups.map((g) => ({ ...g, title: g.label }))}
         keyExtractor={(s) => String(s.id)}
-        stickySectionHeadersEnabled
+        stickySectionHeadersEnabled={Platform.OS === 'ios'}
         keyboardShouldPersistTaps="handled"
         initialNumToRender={14}
         windowSize={7}

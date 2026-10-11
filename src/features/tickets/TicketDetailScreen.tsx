@@ -66,7 +66,7 @@ function AssigneeSheet({ ticket, visible, onClose }: { ticket: TicketDetail; vis
         {users.isLoading ? <LoadingState label="Loading people..." /> : null}
         {users.isError ? <ErrorState message={getErrorMessage(users.error)} onRetry={() => void users.refetch()} /> : null}
         {users.data ? (
-          <FlatList
+          <FlatList removeClippedSubviews={false}
             data={[{ id: 0, name: 'Unassigned' }, ...users.data]}
             keyExtractor={(u) => String(u.id)}
             style={{ maxHeight: 420 }}

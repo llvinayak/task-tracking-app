@@ -7,7 +7,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 export const ICON_NAMES = [
   'grid', 'grid-outline', 'list', 'list-outline', 'today', 'today-outline',
   'shield-checkmark', 'shield-checkmark-outline', 'ticket', 'ticket-outline', 'flash', 'flash-outline',
-  'ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline',
+  'ellipsis-horizontal-circle', 'ellipsis-horizontal-circle-outline', 'menu', 'menu-outline', 'log-out-outline',
   'play', 'stop', 'swap-horizontal', 'add', 'search', 'options-outline',
   'chevron-back', 'chevron-forward', 'chevron-down', 'chevron-up', 'close', 'checkmark',
   'calendar-outline', 'time-outline', 'timer-outline', 'alert-circle', 'alert-circle-outline', 'warning',

@@ -120,7 +120,7 @@ export function TicketCreateScreen() {
         <View style={styles.sheet}>
           {projects.isLoading ? <LoadingState label="Loading projects..." /> : null}
           {projects.isError && !projects.data ? <ErrorState message={getErrorMessage(projects.error)} onRetry={() => void projects.refetch()} /> : null}
-          <FlatList
+          <FlatList removeClippedSubviews={false}
             data={projects.data ?? []}
             keyExtractor={(p) => String(p.id)}
             style={{ maxHeight: 420 }}

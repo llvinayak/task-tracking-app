@@ -15,10 +15,10 @@ import type { ModuleName } from './types';
  * hidden from mobile (is_visible_on_mobile !== false).
  *
  * Everything else the server grants (releases, calendar, admin screens, ...) is
- * listed on the More screen as "Not available in this version yet".
+ * listed in the drawer as "Not available in this version yet".
  *
  * ORDER = tab priority: the first MAX_MODULE_TABS granted modules become tabs,
- * the rest open from More.
+ * the rest open from the drawer.
  */
 export interface MobileModule {
   menuUrl: string;

@@ -82,7 +82,7 @@ export function ProjectPickerSheet({ visible, onClose }: { visible: boolean; onC
           <ErrorState message={getErrorMessage(error)} onRetry={() => void refetch()} />
         </View>
       ) : (
-        <FlatList
+        <FlatList removeClippedSubviews={false}
           data={[null, ...filtered] as (Project | null)[]}
           keyExtractor={(p) => (p ? String(p.id) : 'all')}
           keyboardShouldPersistTaps="handled"

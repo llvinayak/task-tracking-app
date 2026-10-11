@@ -1,9 +1,10 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, SectionList, StyleSheet, View } from 'react-native';
+import { Platform, RefreshControl, ScrollView, SectionList, StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import type { Task } from '@/api/models';
 import {
   BottomSheet,
@@ -97,13 +98,10 @@ export function TasksScreen() {
     void today; // overdue maths depends on the calendar day, so re-derive at midnight / resume
     return quickCounts(all ?? []);
   }, [all, today]);
-  const visible = useMemo(
-    () => {
-      void today;
-      return quick ? (all ?? []).filter((x) => matchesQuick(x, quick)) : (all ?? []);
-    },
-    [all, quick, today],
-  );
+  const visible = useMemo(() => {
+    void today;
+    return quick ? (all ?? []).filter((x) => matchesQuick(x, quick)) : (all ?? []);
+  }, [all, quick, today]);
   const groups = useMemo(() => groupTasks(visible, config, groupBy), [visible, config, groupBy]);
   const sections = useMemo(() => groups.map((g) => ({ ...g, title: g.label })), [groups]);
 
@@ -119,7 +117,8 @@ export function TasksScreen() {
   const openMove = useCallback((task: Task) => setMoving(task), []);
 
   /** Filters that live in the sheet (the quick chips and Mine are visible on the list itself). */
-  const sheetFilterCount = [priority, taskType].filter(Boolean).length + (backlogOnly ? 1 : 0) + (groupBy !== 'status' ? 1 : 0);
+  const sheetFilterCount =
+    [priority, taskType].filter(Boolean).length + (backlogOnly ? 1 : 0) + (groupBy !== 'status' ? 1 : 0);
   const hasFilters = !!(searchText || priority || taskType || backlogOnly || quick || mine);
   const clearFilters = () => {
     setSearchText('');
@@ -141,12 +140,19 @@ export function TasksScreen() {
     void tasksQuery.refetch();
     if (configError) void refetchConfig();
   };
-  const refreshControl = <RefreshControl refreshing={tasksQuery.isRefetching} onRefresh={refresh} tintColor={t.colors.brand[500]} />;
+  const refreshControl = (
+    <RefreshControl refreshing={tasksQuery.isRefetching} onRefresh={refresh} tintColor={t.colors.brand[500]} />
+  );
 
   /** Scrolls WITH the list (not fixed chrome): quick filters, the Mine helper and the count line. */
   const listHeader = (
     <View style={styles.listHeader}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.chips}
+      >
         <Chip testID="chip-mine" label="Mine" selected={mine} disabled={!userId} onPress={() => setMine((v) => !v)} />
         {QUICK_FILTERS.map((f) => (
           <Chip
@@ -173,6 +179,14 @@ export function TasksScreen() {
   );
 
   const failed = tasksQuery.isError && !all;
+  // The list structure must not change under the native layer: `sections` is never empty. While loading, failed or
+  // when nothing matches, ONE placeholder section (no rows, no header) carries the skeleton/error/empty block in its
+  // footer, so ListHeaderComponent and ListEmptyComponent are never swapped in/out on a filter or search change.
+  const showPlaceholder = loading || failed || sections.length === 0;
+  const listSections = useMemo(
+    () => (showPlaceholder ? [{ ...PLACEHOLDER_SECTION }] : sections) as unknown as typeof sections,
+    [showPlaceholder, sections],
+  );
   // The list and its header (chips, Mine helper) are ALWAYS mounted: loading, error and empty are the
   // list's empty component. A filter/search change therefore never remounts the chips or flashes the skeleton in place of them.
   const emptyState = loading ? (
@@ -185,45 +199,64 @@ export function TasksScreen() {
     <EmptyState
       icon="checkmark-done-outline"
       title={hasFilters ? 'No tasks match' : 'No tasks yet'}
-      message={hasFilters ? 'Try changing or clearing the filters.' : selected ? `No tasks in ${selected.name}.` : 'Tasks you can access will appear here.'}
+      message={
+        hasFilters
+          ? 'Try changing or clearing the filters.'
+          : selected
+            ? `No tasks in ${selected.name}.`
+            : 'Tasks you can access will appear here.'
+      }
       {...(hasFilters ? { action: { label: 'Clear filters', onPress: clearFilters } } : {})}
     />
   );
   const body = (
     <SectionList
-      sections={loading || failed ? [] : sections}
+      sections={listSections}
       keyExtractor={(task) => String(task.id)}
-      stickySectionHeadersEnabled
+      // Sticky section headers only on iOS: on Android they are the other half of the Fabric viewState crash hypothesis.
+      stickySectionHeadersEnabled={Platform.OS === 'ios'}
       keyboardShouldPersistTaps="handled"
       initialNumToRender={8}
       windowSize={7}
       maxToRenderPerBatch={8}
-      removeClippedSubviews
-      contentContainerStyle={[styles.listContent, { paddingBottom: listBottom }, (loading || failed || visible.length === 0) && styles.growContent]}
+      // Off on purpose (RN defaults it ON for Android): view clipping combined with sticky headers and a changing
+      // header/empty component is the classic New-Architecture 'Unable to find viewState for tag' crash class.
+      removeClippedSubviews={false}
+      contentContainerStyle={[styles.listContent, { paddingBottom: listBottom }, showPlaceholder && styles.growContent]}
       refreshControl={refreshControl}
       ListHeaderComponent={listHeader}
-      ListEmptyComponent={emptyState}
       ItemSeparatorComponent={Separator}
-      renderSectionHeader={({ section }) => (
-        <View style={[styles.sectionHeader, { backgroundColor: t.colors.app }]} accessibilityRole="header">
-          <Dot color={section.color} size={10} />
-          <Text weight="semibold">{section.label}</Text>
-          <Text size="sm" tone="subtle">
-            {section.data.length}
-          </Text>
-        </View>
-      )}
+      renderSectionFooter={({ section }) => (isPlaceholder(section) ? emptyState : null)}
+      renderSectionHeader={({ section }) =>
+        isPlaceholder(section) ? null : (
+          <View style={[styles.sectionHeader, { backgroundColor: t.colors.app }]} accessibilityRole="header">
+            <Dot color={section.color} size={10} />
+            <Text weight="semibold">{section.label}</Text>
+            <Text size="sm" tone="subtle">
+              {section.data.length}
+            </Text>
+          </View>
+        )
+      }
       renderItem={({ item }) => (
-        <TaskCard
-          task={item}
-          config={config}
-          today={today}
-          highlightOverdue={quick === 'overdue'}
-          canMove={canMove(item)}
-          showStatus={groupBy === 'priority'}
-          onPress={openTask}
-          onMove={openMove}
-        />
+        // One malformed row must never take the whole board (or the app) down: it degrades to a small notice.
+        <ErrorBoundary
+          inline
+          message="This task could not be displayed."
+          resetKey={item}
+          action={{ label: 'Open task', onPress: () => openTask(item) }}
+        >
+          <TaskCard
+            task={item}
+            config={config}
+            today={today}
+            highlightOverdue={quick === 'overdue'}
+            canMove={canMove(item)}
+            showStatus={groupBy === 'priority'}
+            onPress={openTask}
+            onMove={openMove}
+          />
+        </ErrorBoundary>
       )}
       ListFooterComponent={
         tasksQuery.isError && all ? (
@@ -277,7 +310,14 @@ export function TasksScreen() {
         onClose={() => setFiltersOpen(false)}
         footer={
           <View style={styles.sheetFooter}>
-            <Button label="Clear all" variant="ghost" fullWidth={false} inline onPress={clearSheetFilters} disabled={sheetFilterCount === 0} />
+            <Button
+              label="Clear all"
+              variant="ghost"
+              fullWidth={false}
+              inline
+              onPress={clearSheetFilters}
+              disabled={sheetFilterCount === 0}
+            />
             <Button
               testID="show-tasks"
               label={loading ? 'Show tasks' : `Show ${visible.length} ${visible.length === 1 ? 'task' : 'tasks'}`}
@@ -309,7 +349,11 @@ export function TasksScreen() {
             onChange={setPriority}
             options={[
               { value: ANY, label: 'Any', testID: 'chip-priority-any' },
-              ...PRIORITIES.map((p) => ({ value: p as string, label: priorityLabel(p), testID: `chip-priority-${p}` })),
+              ...PRIORITIES.map((p) => ({
+                value: p as string,
+                label: priorityLabel(p),
+                testID: `chip-priority-${p}`,
+              })),
             ]}
           />
           <Text size="sm" weight="semibold" tone="muted">
@@ -321,7 +365,11 @@ export function TasksScreen() {
             onChange={setTaskType}
             options={[
               { value: ANY, label: 'Any', testID: 'chip-type-any' },
-              ...TASK_TYPES.map((x) => ({ value: x as string, label: typeLabel(x), testID: `chip-type-${x}` })),
+              ...TASK_TYPES.map((x) => ({
+                value: x as string,
+                label: typeLabel(x),
+                testID: `chip-type-${x}`,
+              })),
             ]}
           />
           <Text size="sm" weight="semibold" tone="muted">
@@ -346,9 +394,25 @@ export function TasksScreen() {
   );
 }
 
+const PLACEHOLDER_KEY = '__state__';
+const PLACEHOLDER_SECTION = {
+  key: PLACEHOLDER_KEY,
+  label: '',
+  title: '',
+  color: null,
+  data: [] as Task[],
+};
+const isPlaceholder = (section: { key?: string }): boolean => section.key === PLACEHOLDER_KEY;
+
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
   listHeader: { gap: 4, paddingBottom: 4 },
   chips: { gap: 8, paddingRight: 16 },
   countRow: { paddingVertical: 4 },
@@ -356,9 +420,19 @@ const styles = StyleSheet.create({
   growContent: { flexGrow: 1 },
   skeleton: { paddingTop: 8 },
   sep: { height: 8 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
   stale: { paddingVertical: 12 },
   sheetBody: { padding: 16, gap: 12 },
-  sheetFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  sheetFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   row: { flexDirection: 'row' },
 });

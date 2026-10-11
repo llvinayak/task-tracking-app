@@ -233,7 +233,7 @@ export function PeopleTab({ task, canAssign }: { task: TaskDetail; canAssign: bo
               {!team.isLoading && !team.isError && candidates.length === 0 ? (
                 <Text tone="muted">No eligible team members for this project.</Text>
               ) : null}
-              <FlatList
+              <FlatList removeClippedSubviews={false}
                 data={candidates}
                 keyExtractor={(m) => String(m.user_id)}
                 renderItem={({ item }) => (

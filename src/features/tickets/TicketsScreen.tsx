@@ -173,7 +173,7 @@ export function TicketsScreen() {
           keyboardShouldPersistTaps="handled"
           initialNumToRender={8}
           windowSize={7}
-          removeClippedSubviews
+          removeClippedSubviews={false}
           contentContainerStyle={[styles.list, { paddingBottom: listBottom }, (loading || failed || visible.length === 0) && styles.grow]}
           ListHeaderComponent={listHeader}
           ListEmptyComponent={emptyState}

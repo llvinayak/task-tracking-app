@@ -78,7 +78,7 @@ export function Screen({
     paddingRight: edges.includes('right') ? insets.right : 0,
   };
   // Nothing else clears the bottom inset when 'bottom' is not an edge and there is no tab bar (module pushed
-  // from More): scrolling content carries it. A footer already clears it, so then there is no extra.
+  // from the drawer): scrolling content carries it. A footer already clears it, so then there is no extra.
   const bottomExtra = !edges.includes('bottom') && tabBarHeight == null && !footer ? insets.bottom : 0;
   const inner = [padded && { padding: t.spacing[4] }, contentStyle];
 
@@ -105,7 +105,7 @@ export function Screen({
   );
 
   // Footer clearance: nothing else pads the bottom inset when 'bottom' is not an edge AND there is
-  // no tab bar below (e.g. a module pushed from More); otherwise the edge/tab bar already did.
+  // no tab bar below (e.g. a module pushed from the drawer); otherwise the edge/tab bar already did.
   const footerInset = !edges.includes('bottom') && tabBarHeight == null ? insets.bottom : 0;
   const footerNode =
     footer && !keyboardOpen ? (

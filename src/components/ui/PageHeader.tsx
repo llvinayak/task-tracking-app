@@ -8,6 +8,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { ANDROID_TOUCH } from '@/theme/tokens';
 
 import { Icon } from './Icon';
+import { useDrawer } from '@/navigation/DrawerContext';
+
 import { TopInsetHandledContext } from './Screen';
 import { Text } from './Text';
 
@@ -36,7 +38,9 @@ export function PageHeader({
   const handled = useContext(TopInsetHandledContext);
   const nav = useNavigation();
   const touch = Platform.OS === 'android' ? ANDROID_TOUCH : t.minTouch;
-  const showRow = variant === 'push' || !!title || !!trailing;
+  const drawer = useDrawer();
+  const hamburger = variant === 'tab' && !!drawer;
+  const showRow = variant === 'push' || !!title || !!trailing || hamburger;
 
   return (
     <View
@@ -50,6 +54,18 @@ export function PageHeader({
     >
       {showRow ? (
         <View style={styles.row}>
+          {hamburger && drawer ? (
+            <Pressable
+              testID="open-drawer"
+              onPress={drawer.openDrawer}
+              accessibilityRole="button"
+              accessibilityLabel={drawer.unfiledCue ? 'Open menu, My Day not filed yet' : 'Open menu'}
+              accessibilityState={{ expanded: drawer.open }}
+              style={[styles.hamburger, { minHeight: touch, minWidth: touch }]}
+            >
+              <Icon name="menu" size={24} tone="default" />
+            </Pressable>
+          ) : null}
           {variant === 'push' ? (
             <Pressable
               onPress={onBack ?? (() => nav.goBack())}
@@ -91,6 +107,7 @@ export function PageHeader({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: 8, gap: 4 },
+  hamburger: { alignItems: 'center', justifyContent: 'center' },
   back: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingRight: 8 },
   titleWrap: { flex: 1, justifyContent: 'center' },
   tabTitle: { paddingLeft: 8 },
