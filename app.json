@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "TaskTracking",
+    "slug": "task-tracking-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "tasktracking",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "in.logicloom.tasktracking"
+    },
+    "android": {
+      "package": "in.logicloom.tasktracking"
+    },
+    "plugins": ["expo-secure-store"]
+  }
+}
