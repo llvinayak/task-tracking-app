@@ -1,7 +1,7 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
 import {
@@ -15,17 +15,20 @@ import {
   type TicketStatus,
 } from '@/api/ticketsApi';
 import { openExternal } from '@/components/RichText';
+import { useTaskConfig } from '@/hooks/queries';
+import { statusLabel } from '@/utils/taskUtils';
 import {
   Badge,
   Banner,
   BottomSheet,
   Button,
   Card,
-  Chip,
   Dot,
   ErrorState,
+  OptionRow,
   Input,
   LoadingState,
+  SkeletonDetailHeader,
   Screen,
   StaleBanner,
   Text,
@@ -34,7 +37,6 @@ import { attachmentSchemes } from '@/config/env';
 import { captureSession } from '@/hooks/sessionMutation';
 import { useAddTicketComment, useAssignableUsers, useTicket, useTicketComments, useUpdateTicket } from '@/hooks/tickets';
 import type { RootStackParamList } from '@/navigation/types';
-import { useTheme } from '@/theme/ThemeProvider';
 import { formatDateTime } from '@/utils/dates';
 import { normalizeUrl } from '@/utils/html';
 
@@ -52,7 +54,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function AssigneeSheet({ ticket, visible, onClose }: { ticket: TicketDetail; visible: boolean; onClose: () => void }) {
-  const t = useTheme();
   const users = useAssignableUsers(visible);
   const update = useUpdateTicket(ticket.id);
   const choose = (id: number | null) => {
@@ -60,7 +61,7 @@ function AssigneeSheet({ ticket, visible, onClose }: { ticket: TicketDetail; vis
     update.mutate({ assigned_to: id });
   };
   return (
-    <BottomSheet visible={visible} title="Assignee" onClose={onClose}>
+    <BottomSheet visible={visible} title="Assignee" onClose={onClose} scroll={false}>
       <View style={styles.sheet}>
         {users.isLoading ? <LoadingState label="Loading people..." /> : null}
         {users.isError ? <ErrorState message={getErrorMessage(users.error)} onRetry={() => void users.refetch()} /> : null}
@@ -72,22 +73,7 @@ function AssigneeSheet({ ticket, visible, onClose }: { ticket: TicketDetail; vis
             renderItem={({ item }) => {
               const selected = (item.id === 0 && !ticket.assignee) || ticket.assignee?.id === item.id;
               return (
-                <Pressable
-                  onPress={() => choose(item.id === 0 ? null : item.id)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={item.name}
-                  accessibilityState={{ selected }}
-                  style={[styles.userRow, { minHeight: t.minTouch, borderBottomColor: t.colors.lineFaint }]}
-                >
-                  <Text weight={selected ? 'semibold' : 'medium'} style={styles.flex1}>
-                    {item.name}
-                  </Text>
-                  {selected ? (
-                    <Text tone="brand" weight="bold">
-                      ✓ Selected
-                    </Text>
-                  ) : null}
-                </Pressable>
+                <OptionRow label={item.name} selected={selected} onPress={() => choose(item.id === 0 ? null : item.id)} />
               );
             }}
           />
@@ -105,6 +91,7 @@ export function TicketDetailScreen() {
   const comments = useTicketComments(id ?? 0);
   const update = useUpdateTicket(id ?? 0);
   const add = useAddTicketComment(id ?? 0);
+  const { config } = useTaskConfig();
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [text, setText] = useState('');
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -119,7 +106,7 @@ export function TicketDetailScreen() {
   if (ticket.isLoading) {
     return (
       <Screen edges={['left', 'right', 'bottom']}>
-        <LoadingState label="Loading ticket..." />
+        <SkeletonDetailHeader label="Loading ticket..." />
       </Screen>
     );
   }
@@ -165,7 +152,7 @@ export function TicketDetailScreen() {
           <Badge label={`${SEVERITY_LABEL[tk.severity] ?? 'Low'} severity`} tone={severityTone(tk.severity)} />
           <Badge label={TICKET_STATUS_LABEL[tk.status]} tone={statusTone(tk.status)} />
         </View>
-        <Text size="2xl" weight="bold" accessibilityRole="header">
+        <Text size="xl" weight="bold" accessibilityRole="header">
           {tk.title}
         </Text>
       </View>
@@ -189,7 +176,7 @@ export function TicketDetailScreen() {
         <Fact label="Assignee">
           <View style={styles.between}>
             <Text testID="ticket-assignee">{tk.assignee?.name ?? 'Unassigned'}</Text>
-            <Button label="Change assignee" variant="secondary" fullWidth={false} onPress={() => setAssigneeOpen(true)} />
+            <Button label="Change assignee" variant="secondary" size="compact" fullWidth={false} inline onPress={() => setAssigneeOpen(true)} />
           </View>
         </Fact>
       </Card>
@@ -205,13 +192,25 @@ export function TicketDetailScreen() {
         ) : null}
         <View style={styles.tags}>
           {targets.map((s: TicketStatus) => (
-            <Chip
+            <Button
               key={s}
               testID={`ticket-status-${s}`}
               label={`Mark ${TICKET_STATUS_LABEL[s]}`}
-              selected={false}
+              variant="secondary"
+              size="compact"
+              fullWidth={false}
               disabled={update.isPending}
-              onPress={() => update.mutate({ status: s })}
+              onPress={() => {
+                if (s !== 'closed') {
+                  update.mutate({ status: s });
+                  return;
+                }
+                // Closing is the one status change worth a second look.
+                Alert.alert(`Mark this ticket as ${TICKET_STATUS_LABEL[s]}?`, 'You can change the status again later.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: `Mark ${TICKET_STATUS_LABEL[s]}`, onPress: () => update.mutate({ status: s }) },
+                ]);
+              }}
             />
           ))}
         </View>
@@ -251,7 +250,7 @@ export function TicketDetailScreen() {
                 {x.title}
               </Text>
               <Text size="xs" tone="muted">
-                {x.status.replace(/_/g, ' ')}
+                {statusLabel(config, x.status)}
               </Text>
             </Pressable>
           ))}
@@ -337,12 +336,12 @@ export function TicketDetailScreen() {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   head: { gap: 8, marginBottom: 12 },
-  tags: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
-  gap: { gap: 8, marginBottom: 10 },
+  tags: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  gap: { gap: 8, marginBottom: 8 },
   fact: { gap: 2 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
-  section: { gap: 10, marginTop: 12, paddingBottom: 24 },
+  section: { gap: 8, marginTop: 12, paddingBottom: 24 },
   sheet: { padding: 16, gap: 8 },
   userRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
 });

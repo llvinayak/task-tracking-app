@@ -145,6 +145,60 @@ For each role, log in and record the tabs shown, what More lists, and anything u
 | J6 | Android hardware back on tabs, pushed screens and sheets. | Back goes one level; the dirty My Day guard works. |
 | J7 | Screen reader (TalkBack / VoiceOver) on login, tasks, My Day. | Buttons and fields have sensible labels. |
 
+## K. UI upgrade (fonts, chrome, lists, sheets). Light AND dark, 100% and 150% font size, 320-360dp if you have it
+
+Nothing below has been seen on a device yet: every visual claim in the upgrade is unverified until this section is run.
+
+| # | Step | Expected |
+| --- | --- | --- |
+| K1 **[blocker]** | Cold start in dark mode, then light. | No white flash; the splash background matches the first screen (`#F8FAFC` light, `#090B12` dark); no blank frame before the first screen. Note: the splash image is a temporary transparent placeholder. |
+| K2 | Look at any screen. | Text is Inter (rounded letterforms); icons are drawn (no empty boxes or question marks). With airplane mode on a first install the app still starts (system font fallback after 2.5s). |
+| K3 **[blocker]** | Tab bar with 5 tabs at 320dp, then at 150% font. | Icons + 12px labels not clipped; the selected tab has a bar on top, a filled icon and a bold label; pressing a tab shows feedback. |
+| K4 | Open a screen that has an unfiled day (My Day not filed) as Developer, then as PM. | Developer: dot on the My Day tab. PM/CTO: dot on More and a "Not filed yet" badge on the My Day row in More. No numeric badge anywhere. |
+| K5 **[blocker]** | Start a timer, then open Task Detail, Timesheet and a pushed module from More. | The timer strip and (offline) strip show under the header on every screen; Stop works; the strip row opens the task and is not tappable when you are already on that task; Back is in the header and works (also Android hardware back). |
+| K6 | Keyboard: focus a field on Login, Tasks search, a ticket field, My Day notes, and Add time. | The focused field and the footer buttons stay visible and tappable; the tab bar hides while the keyboard is up; nothing is lifted twice or left with a gap (Android edge-to-edge is the risk). |
+| K7 | Tasks screen at 360x640 with no strip, then with the timer strip. | The arithmetic estimate is ~1.9 cards without the strip and ~1.6 with it (see L7: record the real count). Search + Filters is one row; quick chips and the count scroll with the list. |
+| K8 | Tasks: Filters sheet. Set Priority, Type, Backlog, Group by; watch the button. | "Show N tasks" updates live; the Filters button shows the active count; Clear all resets; Mine is OFF by default and says what it matches. |
+| K9 | Task cards. | Due date is labelled and says "3d overdue" / "Due today" without any filter; Dev/QA names are text; type is plain text (red is not used for both type and priority); "Move" works for editable tasks. |
+| K10 **[blocker]** | Add time sheet: type digits only for date and times. Use Today / Yesterday and the -15 / +15 buttons. Cancel after typing. | Dashes and colon appear while typing; weekday text shows; Cancel asks "Discard changes?"; Add entry stays reachable above the keyboard. Add time is disabled until the company timezone is known. |
+| K11 | Errors: trigger an error toast (offline save), then open any sheet and trigger another. | The error toast stays at least 8s and can be dismissed; it shows above an open sheet; queued toasts show one at a time. |
+| K12 | Dashboard as Developer and QA. | Today's focus / Ready for QA comes first, KPIs below and compact; the Overdue info button explains why it differs from Tasks; the quick Start play button appears ONLY on tasks you own and starts the timer; with another timer running it asks "Switch timer?"; haptic on start/stop. |
+| K13 | Task Detail at 320dp. | Tab strip stays pinned while scrolling any tab; labels are not clipped (the strip may scroll); Overview, Time, Comments, More (People / History / Files), plus QA when the task is in the QA flow; Move to... sits next to the timer button. |
+| K14 | QA task screen: verdict, test cases, summary. Reopen a failed task. | Verdict is first; Reopen asks to confirm. Marking a ticket Closed asks to confirm. |
+| K15 | Sprint detail. | Each metric has a plain-language line; burndown bars are not green when much work remains; the ideal tick and "On or under ideal / Above ideal" show. |
+| K16 | My Day: footer, stepper, target. | Save draft / Submit day stay at the bottom (above the tab bar or nav bar, also when opened from More) and hide with the keyboard; at 150% font they stack with Submit on top; the 8h progress shows; date arrows do not wrap at 320dp; Timesheet is in the header. |
+| K17 | Screen reader (TalkBack and VoiceOver) on Tasks, Task Detail, a sheet and a toast. | Tabs announce selected; icon-only buttons are named; sheets trap focus; the toast is announced; radio chips announce checked. |
+| K18 | Reduce motion on, then use sheets, toasts and a loading list. | No sheet slide, no toast slide, skeletons are static. |
+
+## L. Pilot checks (designer + QA). Mark **[blocker]** items first; light AND dark, 100% and 150% font
+
+| # | Step | Expected |
+| --- | --- | --- |
+| L1 **[blocker]** | Cold start, light then dark. | No white flash, no blank frame; splash background matches the first screen. |
+| L2 **[blocker]** | 5 tabs at 320dp and at 150% font. | Icons and labels not clipped; selected tab clear (bar, filled icon, bold). |
+| L3 **[blocker]** | Timer running: open Task Detail, Timesheet, Profile and a module pushed from More. | Timer/offline strips under the header on all of them; Back works. |
+| L4 **[blocker]** | Keyboard on Login, Tasks search, a ticket field, My Day notes and Add time (Android 3-button and gesture, and iOS). | Focused field and footer buttons visible; no double lift, no gap above the keyboard; tab bar hidden while typing. |
+| L5 **[blocker]** | Scroll to the end of every list/screen opened FROM MORE (Tasks, Tickets, Sprints, Dashboard, QA, My Day) and Profile; also the last card on tab screens. | The last card and Sign out clear the Android navigation bar (3-button AND gesture). |
+| L6 | Tasks: Filters sheet (Priority, Type, "Not in a sprint", Group by), Mine, count button. | Live "Show N tasks" (shows "Show tasks" while loading, never "0 tasks"); chips do not flash or jump when filtering; Mine says what it matches. |
+| L7 | Tasks first screen at 360x640, no strip then with the timer strip. | Record the actual number of cards fully visible: ______ (estimate 1.9 / 1.6). |
+| L8 | Task card due text. | `3d overdue`, `Due today`, `Due tomorrow`, `Due 13 Oct` (never "Due Due today"); estimate reads "5h est"; type shown only when informative; Move sits on the due row. |
+| L9 | Fast-scroll a long Tasks list (sticky headers + removeClippedSubviews). | No blank rows or flicker. |
+| L10 | Tech Lead dashboard. | Compact KPIs; Blocked and at risk shows 8 with "Show all N". Developer focus shows 5 with "Show all N". |
+| L11 | Task Detail at 320dp. | Pinned tab strip runs full width (no side gutters); header meta line "Due, Dev, QA"; Start and Move visible without scrolling; the selected tab scrolls into view. |
+| L12 | QA task screen. | "Pass task" / "Fail task" verdicts, then the summary, then the cases; "Open task"; Reopen confirms; plain-language "can't be recorded" text. |
+| L13 **[blocker]** | Add time: trigger an error while scrolled to Note. | The error is visible above Save/Add (sticky footer). |
+| L14 | Edit an auto-closed entry with the keyboard open. | Confirm entry as correct is in the form; Save and Delete share one row. |
+| L15 | Add time: task picker with the keyboard open. | Results stay above the keyboard (list shrinks). |
+| L16 | Type `930` in Start. | Becomes 09:30; helper says "Type 4 digits, e.g. 0930". |
+| L17 | Timesheet week navigation. | Previous/Next week work; Add time disabled until the timezone is known. |
+| L18 | My Day footer at 150%. | Buttons stack with Submit on top and first when read by TalkBack/VoiceOver; the footer clears the nav bar, also when opened from More. |
+| L19 | Tickets header and list. | Header not taller than needed (one search row); chips scroll with the list; separators visible; "Severity: X" badge. |
+| L20 | Sprint detail. | Task rows are separate rows with dividers; progress track is visible in light and dark; burndown is not green when much is left. |
+| L21 | Toasts: an error toast (>= 8s), dismiss, one inside an open sheet, a long message. | Error stays >= 8s and can be dismissed; shows above the sheet; long text is not cut off; announced once. |
+| L22 | TalkBack and VoiceOver: Tasks, Task Detail, a sheet, a toast, radio chips, the tab bar. | Names start with the visible text; radios announce checked; the tab selected state is read; no double announcements. |
+| L23 | Reduce motion on; then offline (airplane mode) on a loaded screen. | No slide animations; the offline strip is one or two lines and data stays with a stale banner. |
+| L24 | Dark pass of every screen above. | Contrast acceptable; cards have borders; nothing invisible. |
+
 ---
 
 ## Results
@@ -216,5 +270,47 @@ One row per item. Copy a row for repeats.
 | J5 | | | | | | |
 | J6 | | | | | | |
 | J7 | | | | | | |
+| K1 | | | | | | |
+| K2 | | | | | | |
+| K3 | | | | | | |
+| K4 | | | | | | |
+| K5 | | | | | | |
+| K6 | | | | | | |
+| K7 | | | | | | |
+| K8 | | | | | | |
+| K9 | | | | | | |
+| K10 | | | | | | |
+| K11 | | | | | | |
+| K12 | | | | | | |
+| K13 | | | | | | |
+| K14 | | | | | | |
+| K15 | | | | | | |
+| K16 | | | | | | |
+| K17 | | | | | | |
+| K18 | | | | | | |
+| L1 | | | | | | |
+| L2 | | | | | | |
+| L3 | | | | | | |
+| L4 | | | | | | |
+| L5 | | | | | | |
+| L6 | | | | | | |
+| L7 | | | | | | |
+| L8 | | | | | | |
+| L9 | | | | | | |
+| L10 | | | | | | |
+| L11 | | | | | | |
+| L12 | | | | | | |
+| L13 | | | | | | |
+| L14 | | | | | | |
+| L15 | | | | | | |
+| L16 | | | | | | |
+| L17 | | | | | | |
+| L18 | | | | | | |
+| L19 | | | | | | |
+| L20 | | | | | | |
+| L21 | | | | | | |
+| L22 | | | | | | |
+| L23 | | | | | | |
+| L24 | | | | | | |
 
 Sign-off: all **[blocker]** items pass on Android and iOS: yes / no. Tester signature and date:

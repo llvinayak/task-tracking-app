@@ -11,21 +11,24 @@ import { useChangeStatus } from '@/hooks/taskMutations';
 import { formatDateTime } from '@/utils/dates';
 import { allowedTargets, statusLabel } from '@/utils/taskUtils';
 
+export const REOPEN_CONFIRM_TITLE = 'Reopen this task?';
+export const REOPEN_CONFIRM_BODY = 'This sends it back to development and increases its reopen count by one.';
 export const FAIL_CONFIRM_TITLE = 'Record a failure?';
 export const FAIL_CONFIRM_BODY = "This records a failure and increases the task's reopen count.";
 export const REFAIL_CONFIRM_BODY =
   "This case has already failed. Recording it again increases the task's reopen count again.";
 
-function Tile({ label, value }: { label: string; value: string | number }) {
+/** One summary figure: the accessible name stays "Label: value" (same as the old tiles). */
+function SummaryItem({ label, value }: { label: string; value: string | number }) {
   return (
-    <Card style={styles.tile} accessible accessibilityLabel={`${label}: ${value}`}>
-      <Text size="2xl" weight="bold">
+    <View style={styles.summaryItem} accessible accessibilityLabel={`${label}: ${value}`}>
+      <Text size="lg" weight="bold" numeric>
         {value}
       </Text>
       <Text size="xs" tone="muted">
         {label}
       </Text>
-    </Card>
+    </View>
   );
 }
 
@@ -65,7 +68,7 @@ function CaseRow({
       {latest?.notes ? <Text size="sm">Notes: {latest.notes}</Text> : null}
       {latest && latest.reopen_count > 0 ? (
         <Text size="xs" tone="subtle">
-          Reopened {latest.reopen_count}×
+          Reopened {latest.reopen_count}x
         </Text>
       ) : null}
       {latest?.tested_at ? (
@@ -77,15 +80,19 @@ function CaseRow({
       {canAct ? (
         <View style={styles.actions}>
           <Button
-            label={`Pass ${tc.title}`}
+            label="Pass"
+            accessibilityLabel={`Pass ${tc.title}`}
             variant="secondary"
+            size="compact"
             fullWidth={false}
             disabled={busy || status === 'pass'}
             onPress={() => onResult(tc, 'pass')}
           />
           <Button
-            label={`Fail ${tc.title}`}
-            variant="danger"
+            label="Fail"
+            accessibilityLabel={`Fail ${tc.title}`}
+            variant="dangerOutline"
+            size="compact"
             fullWidth={false}
             disabled={busy}
             onPress={() => onResult(tc, 'fail')}
@@ -152,11 +159,11 @@ export function QAPanel({ taskId, status, canAct }: { taskId: number; status: st
   // table the server enforces); a disallowed one is disabled WITH a reason.
   // NOTE: the server has no project/assignee check on QA endpoints (backend gap),
   // so gating on canView('/qa') above is a courtesy, not security.
-  const candidates: { status: string; label: string; variant: 'primary' | 'danger' | 'secondary' }[] =
+  const candidates: { status: string; label: string; variant: 'primary' | 'dangerOutline' | 'secondary' }[] =
     status === 'READY_FOR_QA'
       ? [
-          { status: 'PASS', label: 'Pass', variant: 'primary' },
-          { status: 'FAIL', label: 'Fail', variant: 'danger' },
+          { status: 'PASS', label: 'Pass task', variant: 'primary' },
+          { status: 'FAIL', label: 'Fail task', variant: 'dangerOutline' },
         ]
       : status === 'FAIL'
         ? [{ status: 'REOPEN', label: 'Reopen', variant: 'secondary' }]
@@ -170,18 +177,6 @@ export function QAPanel({ taskId, status, canAct }: { taskId: number; status: st
         <ErrorState message={getErrorMessage(summary.error)} onRetry={() => void summary.refetch()} />
       ) : null}
       {summary.isError && summary.data ? <StaleBanner message={getErrorMessage(summary.error)} /> : null}
-      {summary.data ? (
-        <View style={styles.tiles} testID="qa-summary">
-          <Tile label="Total" value={summary.data.total} />
-          <Tile label="Passed" value={summary.data.passed} />
-          <Tile label="Failed" value={summary.data.failed} />
-          <Tile label="Pending" value={summary.data.pending} />
-          <Text size="xs" tone="muted" style={styles.rate}>
-            Pass rate {summary.data.pass_rate}%
-          </Text>
-        </View>
-      ) : null}
-
       {canAct ? (
         <Card style={styles.gap} testID="qa-verdict">
           <Text size="xs" tone="subtle" weight="semibold">
@@ -198,22 +193,37 @@ export function QAPanel({ taskId, status, canAct }: { taskId: number; status: st
                     fullWidth={false}
                     loading={change.isPending && change.variables?.status === v.status}
                     disabled={change.isPending || !allowedKeys.has(v.status)}
-                    onPress={() =>
-                      change.mutate({
-                        taskId,
-                        status: v.status,
-                        successMessage: `Moved to ${statusLabel(config, v.status)}`,
-                      })
-                    }
+                    onPress={() => {
+                      const go = () =>
+                        change.mutate({
+                          taskId,
+                          status: v.status,
+                          successMessage: `Moved to ${statusLabel(config, v.status)}`,
+                        });
+                      // Reopen sends the task back to development and bumps its reopen count: confirm first.
+                      if (v.status === 'REOPEN') {
+                        Alert.alert(REOPEN_CONFIRM_TITLE, REOPEN_CONFIRM_BODY, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Reopen', style: 'destructive', onPress: go },
+                        ]);
+                        return;
+                      }
+                      go();
+                    }}
                   />
                 ))}
               </View>
+              {candidates.some((v) => v.status === 'REOPEN') ? (
+                <Text size="xs" tone="muted">
+                  Reopen increases the task&apos;s reopen count.
+                </Text>
+              ) : null}
               {candidates
                 .filter((v) => !allowedKeys.has(v.status))
                 .map((v) => (
                   <Text key={v.status} size="xs" tone="muted" testID={`verdict-reason-${v.status}`}>
                     {config
-                      ? `${v.label} is not allowed from ${statusLabel(config, status)} in this workflow.`
+                      ? `${v.label.replace(' task', '')} can't be recorded while this task is ${statusLabel(config, status)}.`
                       : 'Loading the workflow...'}
                   </Text>
                 ))}
@@ -227,6 +237,19 @@ export function QAPanel({ taskId, status, canAct }: { taskId: number; status: st
         </Card>
       ) : null}
 
+      {summary.data ? (
+        <Card style={styles.gap} testID="qa-summary">
+          <View style={styles.tiles}>
+            <SummaryItem label="Total" value={summary.data.total} />
+            <SummaryItem label="Passed" value={summary.data.passed} />
+            <SummaryItem label="Failed" value={summary.data.failed} />
+            <SummaryItem label="Pending" value={summary.data.pending} />
+          </View>
+          <Text size="xs" tone="muted">
+            Pass rate {summary.data.pass_rate}%
+          </Text>
+        </Card>
+      ) : null}
       {cases.isLoading ? <LoadingState label="Loading test cases..." /> : null}
       {cases.isError && !cases.data ? (
         <ErrorState message={getErrorMessage(cases.error)} onRetry={() => void cases.refetch()} />
@@ -274,7 +297,6 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tile: { flexGrow: 1, flexBasis: '22%', alignItems: 'center', gap: 2 },
-  rate: { width: '100%' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 16, rowGap: 8 },
+  summaryItem: { alignItems: 'flex-start', gap: 2 },
 });

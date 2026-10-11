@@ -96,6 +96,10 @@ describe('RootNavigator (protected navigation)', () => {
     fireEvent.press(tab('More'));
     await settle();
     expect(screen.getByLabelText('Profile and settings')).toBeTruthy();
+    // Web-only menus sit behind a collapsed disclosure: one title, rows only after expanding.
+    expect(await screen.findByText('Not available in this version yet')).toBeTruthy();
+    expect(screen.queryByText('Calendar')).toBeNull();
+    fireEvent.press(screen.getByLabelText('Not available in this version yet, 1'));
     expect(await screen.findByText('Calendar')).toBeTruthy();
     expect(screen.queryByText('Releases')).toBeNull();
     expect(screen.getAllByText('Not available in this version yet')).toHaveLength(1);

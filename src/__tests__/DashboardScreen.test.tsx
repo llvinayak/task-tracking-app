@@ -5,11 +5,14 @@ import * as dashboardApi from '@/api/dashboardApi';
 import { AppError } from '@/api/errors';
 import { parseStatusConfig } from '@/api/models';
 import * as projectsApi from '@/api/projectsApi';
+import * as timeApi from '@/api/timeApi';
+import { Alert, Text as RNText } from 'react-native';
 import { DashboardScreen } from '@/features/dashboard/DashboardScreen';
 import { useAuthStore } from '@/store/authStore';
 import { rawStatuses, rawTask, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
 import { resetNowProvider, setNowProvider } from '@/utils/dates';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -26,6 +29,12 @@ jest.mock('@/api/dashboardApi', () => ({
   getPMStats: jest.fn(),
 }));
 jest.mock('@/api/projectsApi');
+jest.mock('@/api/timeApi', () => ({
+  ...jest.requireActual('@/api/timeApi'),
+  getRunningTimer: jest.fn(),
+  startTimer: jest.fn(),
+  stopTimer: jest.fn(),
+}));
 
 const dash = dashboardApi as jest.Mocked<typeof dashboardApi>;
 const projects = projectsApi as jest.Mocked<typeof projectsApi>;
@@ -38,6 +47,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   setNowProvider(() => new Date(2026, 9, 10, 10));
   projects.getTaskStatuses.mockResolvedValue(parseStatusConfig(rawStatuses()));
+  (timeApi.getRunningTimer as jest.Mock).mockResolvedValue(null);
 });
 afterEach(() => {
   resetNowProvider();
@@ -184,7 +194,7 @@ describe('Developer content', () => {
     expect(all).toEqual(order); // sorted CRITICAL > HIGH > LOW, not server order
 
     expect(screen.getByText('Failed QA')).toBeTruthy();
-    expect(screen.getByText('x3')).toBeTruthy();
+    expect(screen.getByText('Reopened 3x')).toBeTruthy();
     expect(screen.getAllByText('Blocked').length).toBeGreaterThan(0);
     expect(screen.getByText('3d late')).toBeTruthy();
   });
@@ -318,5 +328,201 @@ describe('polling', () => {
       await jest.advanceTimersByTimeAsync(180_000);
     });
     expect(dash.getPMStats).toHaveBeenCalledTimes(1);
+  });
+});
+
+const textsInOrder = () =>
+  screen.UNSAFE_getAllByType(RNText).map((n: { props: { children?: unknown } }) => [n.props.children].flat().filter((c) => typeof c === 'string').join(''));
+
+describe('Stage 2: Developer / QA layout, Overdue explainer and quick Start', () => {
+  const ownerData = () =>
+    devData({
+      todayTasks: [
+        rawTask({ id: 10, title: 'Mine to start', priority: 'HIGH', dev_owner_id: 7 }),
+        rawTask({ id: 11, title: 'Roster only', priority: 'LOW', dev_owner_id: 99, devOwner: { id: 99, name: 'Someone' } }),
+      ],
+    });
+  const asDev = () =>
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 5 }) });
+
+  it("Today's focus comes BEFORE the KPI strip (Developer) and the KPIs are dense (no hint line)", async () => {
+    dash.getDeveloperStats.mockResolvedValue(devData());
+    asDev();
+    render();
+    await screen.findByText("Today's focus");
+    const order = textsInOrder();
+    expect(order.indexOf("Today's focus")).toBeGreaterThan(-1);
+    expect(order.indexOf("Today's focus")).toBeLessThan(order.indexOf('Active tasks'));
+    expect(screen.queryByText('Needs attention', { exact: true, includeHiddenElements: false })).toBeTruthy(); // the section title
+    expect(screen.queryByText('Missed start/deadline')).toBeNull();
+  });
+
+  it('QA: Ready for QA first, then the KPI strip', async () => {
+    dash.getQAStats.mockResolvedValue(dashboardApi.parseQAStats({ stats: { activeTasks: 1, passedTasks: 2, needsRetest: 0 }, myReadyForQA: [rawTask({ id: 3, title: 'QA me' })] }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 8, roleId: 4 }) });
+    render();
+    await screen.findByText('Ready for QA');
+    const order = textsInOrder();
+    expect(order.indexOf('Ready for QA')).toBeGreaterThan(-1);
+    expect(order.indexOf('Ready for QA')).toBeLessThan(order.indexOf('Active tasks'));
+    expect(screen.queryByRole('button', { name: /Start timer on/ })).toBeNull(); // no quick Start for QA
+  });
+
+  it('Overdue has an info button that explains why it can differ from the Tasks filter', async () => {
+    dash.getDeveloperStats.mockResolvedValue(devData());
+    asDev();
+    render();
+    fireEvent.press(await screen.findByRole('button', { name: 'About Overdue' }));
+    expect(screen.getByText(/includes tasks due today/)).toBeTruthy();
+    expect(screen.getByText(/only counts tasks due before today/)).toBeTruthy();
+  });
+
+  it('quick Start appears only on rows where I am an OWNER, is a 44x44 icon button named for the task', async () => {
+    dash.getDeveloperStats.mockResolvedValue(ownerData());
+    asDev();
+    render();
+    const start = await screen.findByRole('button', { name: 'Start timer on Mine to start' });
+    expect(screen.queryByRole('button', { name: 'Start timer on Roster only' })).toBeNull();
+    const style = Object.assign({}, ...[start.props.style].flat(5).filter(Boolean));
+    expect(style.minHeight).toBeGreaterThanOrEqual(44);
+    expect(style.minWidth).toBeGreaterThanOrEqual(44);
+    expect(screen.queryByText('Start')).toBeNull(); // icon only: no visible text
+  });
+
+  it('with no other timer running it starts straight away (no confirmation) and fires the start haptic', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    dash.getDeveloperStats.mockResolvedValue(ownerData());
+    (timeApi.startTimer as jest.Mock).mockResolvedValue({ id: 1, stopped: null });
+    asDev();
+    render();
+    fireEvent.press(await screen.findByRole('button', { name: 'Start timer on Mine to start' }));
+    await screen.findByText('Timer started');
+    expect(alert).not.toHaveBeenCalled();
+    expect(timeApi.startTimer).toHaveBeenCalledWith(10);
+    const haptics = jest.requireMock('expo-haptics') as { impactAsync: jest.Mock };
+    expect(haptics.impactAsync).toHaveBeenCalledWith('medium');
+    alert.mockRestore();
+  });
+
+  it('with another timer running it asks "Switch timer?" first; Cancel starts nothing, Switch starts', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    (timeApi.getRunningTimer as jest.Mock).mockResolvedValue(
+      timeApi.parseRunningTimer({ id: 1, started_at: '2026-10-10T09:00:00Z', task: { id: 50, title: 'Other work', status: 'IN_PROGRESS', project: null } }),
+    );
+    dash.getDeveloperStats.mockResolvedValue(ownerData());
+    (timeApi.startTimer as jest.Mock).mockResolvedValue({ id: 2, stopped: { taskId: 50, title: 'Other work' } });
+    asDev();
+    render();
+    await screen.findByTestId('running-timer-banner');
+    fireEvent.press(await screen.findByRole('button', { name: 'Start timer on Mine to start' }));
+    const call = alert.mock.calls.at(-1)!;
+    expect(call[0]).toBe('Switch timer?');
+    expect(call[1]).toBe('This stops the timer on "Other work" and starts one on "Mine to start".');
+    expect(timeApi.startTimer).not.toHaveBeenCalled();
+    const buttons = call[2] as { text: string; onPress?: () => void }[];
+    expect(buttons.map((b) => b.text)).toEqual(['Cancel', 'Switch']);
+    await act(async () => buttons[1]!.onPress!());
+    expect(timeApi.startTimer).toHaveBeenCalledWith(10);
+    alert.mockRestore();
+  });
+
+  it('the row where my timer runs shows Stop instead', async () => {
+    (timeApi.getRunningTimer as jest.Mock).mockResolvedValue(
+      timeApi.parseRunningTimer({ id: 1, started_at: '2026-10-10T09:00:00Z', task: { id: 10, title: 'Mine to start', status: 'IN_PROGRESS', project: null } }),
+    );
+    dash.getDeveloperStats.mockResolvedValue(ownerData());
+    asDev();
+    render();
+    expect(await screen.findAllByRole('button', { name: 'Stop timer on Mine to start' })).not.toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Start timer on Mine to start' })).toBeNull();
+  });
+});
+
+describe('Pilot fixes (Dashboard)', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => rawTask({ id: 100 + i, title: `Focus ${i + 1}`, priority: 'MEDIUM' }));
+
+  it("Today's focus shows 5 rows and expands IN PLACE with \"Show all N\" / \"Show fewer\"", async () => {
+    dash.getDeveloperStats.mockResolvedValue(devData({ todayTasks: many(8) }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 5 }) });
+    render();
+    await screen.findByText('Focus 1');
+    expect(screen.getByText('Focus 5')).toBeTruthy();
+    expect(screen.queryByText('Focus 6')).toBeNull();
+    expect(screen.queryByText(/^Showing /)).toBeNull(); // the old "Showing X of Y" text is gone
+    fireEvent.press(screen.getByRole('button', { name: 'Show all 8' }));
+    expect(screen.getByText('Focus 8')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: 'Show fewer' }));
+    expect(screen.queryByText('Focus 6')).toBeNull();
+    expect(dash.getDeveloperStats).toHaveBeenCalledTimes(1); // UI state only, no refetch
+  });
+
+  it('a section with 5 or fewer rows has no toggle', async () => {
+    dash.getDeveloperStats.mockResolvedValue(devData({ todayTasks: many(5) }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 5 }) });
+    render();
+    await screen.findByText('Focus 5');
+    expect(screen.queryByRole('button', { name: /^Show all/ })).toBeNull();
+  });
+
+  it('a ZERO "Completed today" is neutral (no green check that reads as good); a positive one keeps the success icon; Overdue 0 stays good', async () => {
+    dash.getDeveloperStats.mockResolvedValue(devData({ stats: { activeTasks: 1, completedToday: 0, overdueTasks: 0 } }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 5 }) });
+    const first = render();
+    await screen.findByLabelText('Completed today: 0');
+    const icons = (label: string) => screen.getByLabelText(label).findAll((n: { type: unknown }) => n.type === 'Icon');
+    expect(icons('Completed today: 0')).toHaveLength(0);
+    expect(icons('Overdue: 0').length).toBeGreaterThan(0);
+    first.unmount();
+    dash.getDeveloperStats.mockResolvedValue(devData({ stats: { activeTasks: 1, completedToday: 3, overdueTasks: 0 } }));
+    render();
+    await screen.findByLabelText('Completed today: 3');
+    expect(icons('Completed today: 3').length).toBeGreaterThan(0);
+  });
+
+  it('a row announces its due date, project and reopen count', async () => {
+    dash.getDeveloperStats.mockResolvedValue(
+      devData({ todayTasks: [rawTask({ id: 9, title: 'Rich row', priority: 'HIGH', due_date: '2026-10-12', reopen_count: 2, project: { id: 3, name: 'Alpha Project', color: '#3366ff' } })] }),
+    );
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 5 }) });
+    render();
+    const row = await screen.findByLabelText(/^Rich row\./);
+    expect(row.props.accessibilityLabel).toContain('Reopened 2x');
+    expect(row.props.accessibilityLabel).toContain('Alpha Project');
+    expect(row.props.accessibilityLabel).toContain('Due 12 Oct');
+  });
+
+  it('Tech Lead KPIs are the dense tiles (no hint line)', async () => {
+    dash.getTLStats.mockResolvedValue(dashboardApi.parseTLStats({ projectIds: [1], kpis: { inProgress: 4, blockedCount: 2 } }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 3 }) });
+    render();
+    const tile = await screen.findByLabelText('In progress: 4');
+    const style = Object.assign({}, ...[screen.getByText('4').props.style].flat(4).filter(Boolean));
+    expect(style.fontSize).toBe(22); // dense value size (2xl), not the 28 of the full tile
+    expect(tile).toBeTruthy();
+  });
+});
+
+
+describe('Label in Name on the dashboards', () => {
+  it('Developer (rows, quick Start, Show all, KPI info)', async () => {
+    dash.getDeveloperStats.mockResolvedValue(devData({ todayTasks: Array.from({ length: 7 }, (_, i) => rawTask({ id: 200 + i, title: `Row ${i}`, dev_owner_id: 7 })) }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 5 }) });
+    render();
+    await screen.findByText('Row 0');
+    expect(labelInNameViolations()).toEqual([]);
+  });
+  it('QA', async () => {
+    dash.getQAStats.mockResolvedValue(dashboardApi.parseQAStats({ stats: { activeTasks: 1, passedTasks: 2, needsRetest: 0 }, myReadyForQA: [rawTask({ id: 3, title: 'QA me' })] }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 8, roleId: 4 }) });
+    render();
+    await screen.findByText('QA me');
+    expect(labelInNameViolations()).toEqual([]);
+  });
+  it('Tech Lead', async () => {
+    dash.getTLStats.mockResolvedValue(dashboardApi.parseTLStats({ projectIds: [1], kpis: { inProgress: 4, blockedCount: 2 }, blockedTasks: [rawTask({ id: 5, title: 'Stuck', is_blocked: true })] }));
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, roleId: 3 }) });
+    render();
+    await screen.findByLabelText('In progress: 4');
+    expect(labelInNameViolations()).toEqual([]);
   });
 });

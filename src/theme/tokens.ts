@@ -29,6 +29,9 @@ interface Palette {
   neutral: Tone;
   shadow: RGB;
   shadowAlpha: number;
+  /** Mobile-only: 3:1 control boundary and 4.5:1 placeholder (see docs/UX_DESIGN_PLAN.md 2.5). */
+  placeholder: RGB;
+  fieldBorder: RGB;
 }
 
 interface Tone {
@@ -70,6 +73,8 @@ const light: Palette = {
   neutral: { base: [100, 116, 139], soft: [248, 250, 252], fg: [71, 85, 105] },
   shadow: [15, 23, 42],
   shadowAlpha: 0.08,
+  placeholder: [107, 114, 128],
+  fieldBorder: [135, 142, 155],
 };
 
 const dark: Palette = {
@@ -105,6 +110,8 @@ const dark: Palette = {
   neutral: { base: [148, 163, 184], soft: [30, 35, 47], fg: [203, 213, 225] },
   shadow: [0, 0, 0],
   shadowAlpha: 0.5,
+  placeholder: [142, 150, 168],
+  fieldBorder: [110, 118, 136],
 };
 
 export interface ToneColors {
@@ -148,6 +155,18 @@ function buildColors(p: Palette) {
     neutral: toTone(p.neutral),
     // Focus ring (tailwind boxShadow.focus: brand-500 at 25%)
     focusRing: rgba(p.brand[500], 0.25),
+    // Mobile-only semantic aliases
+    placeholder: rgb(p.placeholder),
+    fieldBorder: rgb(p.fieldBorder),
+    fieldBorderFocus: rgb(p.brand[500]),
+    divider: rgb(p.borderFaint),
+    avatarDev: rgb(p.brand[700]),
+    avatarQa: rgb(p.success.fg),
+    indicator: rgb(p.brand[600]),
+    dotWarn: rgb(p.warning.base),
+    // Android ripple overlays (alpha, so the control colour underneath stays visible)
+    rippleOnBrand: rgba(p.fgOnBrand, 0.2),
+    ripple: rgba(p.fg, 0.12),
     // Modal scrim
     scrim: rgba(p.shadow, 0.5),
     shadow: rgba(p.shadow, p.shadowAlpha),
@@ -160,7 +179,8 @@ export type ThemeColors = ReturnType<typeof buildColors>;
 
 /** Type scale from tailwind.config.js (px values; lineHeight in px). */
 export const typography = {
-  '2xs': { fontSize: 11, lineHeight: 16 },
+  /** Mobile floor is 12px (web uses 11px): intentional divergence. */
+  '2xs': { fontSize: 12, lineHeight: 16 },
   xs: { fontSize: 12, lineHeight: 18 },
   sm: { fontSize: 13, lineHeight: 20 },
   base: { fontSize: 14, lineHeight: 22 },
@@ -180,21 +200,57 @@ export const fontWeights = {
 } as const;
 export type FontWeight = keyof typeof fontWeights;
 
+/**
+ * Inter family per weight. Android needs one family per weight, so Text sets
+ * fontFamily (and no fontWeight) once fonts are loaded; before that it falls
+ * back to the system font + fontWeight.
+ */
+export const fontFamilies = {
+  regular: 'Inter_400Regular',
+  medium: 'Inter_500Medium',
+  semibold: 'Inter_600SemiBold',
+  bold: 'Inter_700Bold',
+} as const;
+
 /** Web radius tokens: lg 8, xl 12, 2xl 16, 3xl 20. */
 export const radius = { sm: 6, lg: 8, xl: 12, '2xl': 16, '3xl': 20, pill: 999 } as const;
 
-export const spacing = { 0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48 } as const;
+export const spacing = { 0: 0, 0.5: 2, 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48 } as const;
+
+/** Named steps for the allowed spacing values (4pt grid; 2 only inside text stacks). */
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, '2xl': 32 } as const;
+
+/** Motion durations (ms) and pulse loop. Easing lives with the consumers (core Animated). */
+export const motion = { fast: 120, base: 200, slow: 300, pulse: 1000 } as const;
+
+/** Icon sizes: inline with 12-13px text, buttons/rows, tab bar/header, empty states. */
+export const iconSizes = { inline: 16, md: 20, lg: 24, hero: 40 } as const;
+
+/** Priority semantics: aliases onto existing tones, no new colours. */
+export const priorityTone = {
+  critical: 'danger',
+  high: 'warning',
+  medium: 'info',
+  low: 'neutral',
+} as const;
+export type PriorityKey = keyof typeof priorityTone;
 
 /** Minimum touch target (iOS HIG / Material): 44pt. */
 export const MIN_TOUCH = 44;
+/** Android Material target used for tab items, header icon buttons, sheet rows. */
+export const ANDROID_TOUCH = 48;
 
 export interface Theme {
   scheme: 'light' | 'dark';
   colors: ThemeColors;
   typography: typeof typography;
   fontWeights: typeof fontWeights;
+  fontFamilies: typeof fontFamilies;
   radius: typeof radius;
   spacing: typeof spacing;
+  space: typeof space;
+  motion: typeof motion;
+  iconSizes: typeof iconSizes;
   minTouch: number;
   elevation: (level: 'xs' | 'sm' | 'md' | 'lg') => {
     shadowColor: string;
@@ -218,8 +274,12 @@ function buildTheme(scheme: 'light' | 'dark', p: Palette): Theme {
     colors,
     typography,
     fontWeights,
+    fontFamilies,
     radius,
     spacing,
+    space,
+    motion,
+    iconSizes,
     minTouch: MIN_TOUCH,
     elevation: (level) => {
       const l = levels[level];

@@ -8,6 +8,7 @@ import { LoginScreen } from '@/auth/LoginScreen';
 import { useAuthStore } from '@/store/authStore';
 
 import { renderWithProviders } from '@/test/testUtils';
+import { labelInNameViolations } from '@/test/a11y';
 
 jest.mock('@/api/authApi');
 const api = authApi as jest.Mocked<typeof authApi>;
@@ -120,5 +121,13 @@ describe('LoginScreen', () => {
     const style = screen.getByRole('button', { name: 'Sign in' }).props.style;
     const flat = Object.assign({}, ...[style].flat(3).filter(Boolean));
     expect(flat.minHeight).toBeGreaterThanOrEqual(44);
+  });
+});
+
+
+describe('Label in Name on Login', () => {
+  it('Show/Hide, Sign in and the inputs', () => {
+    renderWithProviders(<LoginScreen />);
+    expect(labelInNameViolations()).toEqual([]);
   });
 });

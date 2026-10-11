@@ -12,6 +12,7 @@ import { useProjectStore } from '@/store/projectStore';
 import { rawStatuses, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
 import { resetNowProvider, setNowProvider } from '@/utils/dates';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNav = { navigate: jest.fn(), goBack: jest.fn() };
 let mockParams: Record<string, unknown> = { sprintId: 3 };
@@ -67,6 +68,7 @@ describe('Sprints list', () => {
     const order = screen.getAllByText(/sprint$/).map((n) => n.props.children as string);
     expect(order).toEqual(['Late sprint', 'Current sprint', 'Next sprint', 'Old sprint']);
     expect(screen.getByText('3d overdue')).toBeTruthy(); // from end_date, device calendar
+    expect(labelInNameViolations()).toEqual([]);
     expect(screen.getByText('3d left')).toBeTruthy();
     expect(screen.getByTestId('sprint-1')).toHaveTextContent(/100% · 5\/5 tasks done/);
     expect(screen.getByTestId('sprint-3')).toHaveTextContent(/25% · 1\/4 tasks done · 1 blocked/);
@@ -126,6 +128,7 @@ describe('Sprint detail', () => {
     });
 
   it('shows the header, metric tiles, a text/bar burndown and tappable tasks', async () => {
+    // (also: Label in Name holds for the whole detail screen, checked at the end of this test)
     api.getSprint.mockResolvedValue(
       sp({
         goal: 'Ship login',
@@ -147,7 +150,10 @@ describe('Sprint detail', () => {
     expect(screen.getByLabelText(/^Effort: 30h logged\. 44h estimated · 0\.68x/)).toBeTruthy();
     expect(screen.getByLabelText(/^Duration: 13 days/)).toBeTruthy();
 
-    expect(screen.getByLabelText('2 Oct: 30h remaining, ideal 36.9h')).toBeTruthy(); // text/bar burndown, no chart lib
+    expect(screen.getByLabelText('2 Oct: 30h remaining, ideal 36.9h. On or under ideal')).toBeTruthy(); // text/bar burndown, no chart lib; each row now states where it is against the ideal
+    // Metric explainers (plain language under each figure) and the neutral burndown bar:
+    expect(screen.getByText('Tasks finished so far')).toBeTruthy();
+    expect(screen.getByText(/more time than estimated/)).toBeTruthy();
     expect(screen.getByTestId('sub-sprint-4')).toHaveTextContent(/Release A/);
     expect(screen.getByTestId('sub-sprint-4')).toHaveTextContent(/Planning/); // L5: the shared status label, not the raw value
 
@@ -155,6 +161,7 @@ describe('Sprint detail', () => {
     expect(mockNav.navigate).toHaveBeenCalledWith('TaskDetail', { taskId: 9 });
     expect(screen.getByTestId('sprint-task-9')).toHaveTextContent(/Blocked/);
     expect(screen.getByTestId('sprint-task-9')).toHaveTextContent(/Dev: Grace/);
+    expect(labelInNameViolations()).toEqual([]);
   });
 
   it('parses the real server ideal shape [{date, ideal}] and still tolerates older keys and bare numbers', () => {
@@ -216,5 +223,15 @@ describe('Sprint detail', () => {
     });
     expect(screen.getByText('Sprint 3')).toBeTruthy();
     expect(await screen.findByTestId('stale-banner')).toBeTruthy();
+  });
+});
+
+describe('ProgressBar track', () => {
+  it('uses the stronger line colour so a low fill is still visible against it (light and dark)', () => {
+    const { lightTheme, darkTheme } = jest.requireActual('@/theme/tokens');
+    for (const th of [lightTheme, darkTheme]) {
+      expect(th.colors.lineStrong).not.toBe(th.colors.subtle);
+      expect(th.colors.lineStrong).not.toBe(th.colors.surface);
+    }
   });
 });

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 
 import { getPendingDay } from '@/api/dailyReportApi';
 import { getRunningTimer, type RunningTimer } from '@/api/timeApi';
@@ -11,9 +11,8 @@ import { useOpenModule } from '@/navigation/useOpenModule';
 
 import { buildSignOutDialog, withTimeout } from './signOutDialog';
 
-import { Button, Card, Screen, Text, useToast } from '@/components/ui';
+import { Button, Card, ChoiceChips, HeaderProvidedContext, Screen, Text, useToast } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
-import { useTheme } from '@/theme/ThemeProvider';
 import { useThemeStore, type ThemeMode } from '@/theme/themeStore';
 
 const MODES: { value: ThemeMode; label: string }[] = [
@@ -23,37 +22,15 @@ const MODES: { value: ThemeMode; label: string }[] = [
 ];
 
 function ThemeModePicker() {
-  const t = useTheme();
   const mode = useThemeStore((s) => s.mode);
   const setMode = useThemeStore((s) => s.setMode);
   return (
-    <View accessibilityRole="radiogroup" style={styles.modes}>
-      {MODES.map((m) => {
-        const selected = mode === m.value;
-        return (
-          <Pressable
-            key={m.value}
-            onPress={() => setMode(m.value)}
-            accessibilityRole="radio"
-            accessibilityLabel={`${m.label} theme`}
-            accessibilityState={{ selected }}
-            style={[
-              styles.mode,
-              {
-                minHeight: t.minTouch,
-                borderRadius: t.radius.xl,
-                borderColor: selected ? t.colors.brand[500] : t.colors.lineStrong,
-                backgroundColor: selected ? t.colors.brand[50] : t.colors.surface,
-              },
-            ]}
-          >
-            <Text weight={selected ? 'semibold' : 'medium'} tone={selected ? 'brand' : 'default'}>
-              {m.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <ChoiceChips
+      accessibilityLabel="Theme"
+      value={mode}
+      onChange={setMode}
+      options={MODES.map((m) => ({ value: m.value, label: m.label, accessibilityLabel: `${m.label} theme` }))}
+    />
   );
 }
 
@@ -62,6 +39,7 @@ export function ProfileScreen() {
   const logout = useAuthStore((s) => s.logout);
   const signingOut = useAuthStore((s) => s.signingOut);
   const toast = useToast();
+  const headerProvided = useContext(HeaderProvidedContext);
 
   const qc = useQueryClient();
   const openModule = useOpenModule();
@@ -104,12 +82,14 @@ export function ProfileScreen() {
 
   return (
     <Screen scroll edges={['top', 'left', 'right']}>
-      <Text size="2xl" weight="bold" accessibilityRole="header" style={styles.title}>
-        Profile
-      </Text>
+      {headerProvided ? null : (
+        <Text size="xl" weight="bold" accessibilityRole="header" style={styles.title}>
+          Profile
+        </Text>
+      )}
 
       <Card style={styles.section}>
-        <Text size="xs" tone="subtle" weight="semibold">
+        <Text size="xs" tone="subtle" weight="semibold" accessibilityRole="header">
           ACCOUNT
         </Text>
         <Text size="xl" weight="semibold">
@@ -120,7 +100,7 @@ export function ProfileScreen() {
       </Card>
 
       <Card style={styles.section}>
-        <Text size="xs" tone="subtle" weight="semibold">
+        <Text size="xs" tone="subtle" weight="semibold" accessibilityRole="header">
           APPEARANCE
         </Text>
         <ThemeModePicker />
@@ -128,7 +108,7 @@ export function ProfileScreen() {
 
       <Button
         label="Sign out"
-        variant="danger"
+        variant="dangerOutline"
         loading={signingOut || checking}
         onPress={() => void confirmSignOut()}
       />
@@ -139,6 +119,4 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   title: { marginBottom: 16 },
   section: { gap: 8, marginBottom: 16 },
-  modes: { flexDirection: 'row', gap: 8 },
-  mode: { flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 });

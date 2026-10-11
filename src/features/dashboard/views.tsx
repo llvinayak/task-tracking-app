@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type {
@@ -11,7 +11,7 @@ import type {
   TLDashboard,
 } from '@/api/dashboardApi';
 import type { Task, TaskStatusConfig } from '@/api/models';
-import { Badge, Card, Dot, EmptyState, KpiCard, KpiGrid, ProgressBar, SectionHeader, Text } from '@/components/ui';
+import { Badge, Button, Card, Dot, EmptyState, KpiCard, KpiGrid, ProgressBar, SectionHeader, Text } from '@/components/ui';
 import { useDashboardQuery, useTaskConfig } from '@/hooks/queries';
 import type { RootStackParamList } from '@/navigation/types';
 import { daysFromToday, daysLeftFor, daysLeftLabel, formatDay, formatDateTime } from '@/utils/dates';
@@ -20,6 +20,11 @@ import { sortByPriority, statusLabel } from '@/utils/taskUtils';
 import { useTodayKey } from '@/hooks/useToday';
 import { DashboardFrame, usePollInterval } from './DashboardFrame';
 import { TaskRow } from '../tasks/TaskParts';
+import { QuickStart } from './QuickStart';
+
+/** Copy for the Overdue info sheet: the dashboard (server) and the Tasks chip (device calendar) count differently. */
+export const OVERDUE_INFO =
+  'This count comes from the server and includes tasks due today. The Overdue filter on Tasks only counts tasks due before today, so the two numbers can differ.';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -37,6 +42,7 @@ function TaskSection({
   config,
   trailing,
   limit,
+  action,
 }: {
   title: string;
   hint?: string;
@@ -45,9 +51,13 @@ function TaskSection({
   config: readonly TaskStatusConfig[] | undefined;
   trailing?: (t: Task) => string | undefined;
   limit?: number;
+  /** Per-row control beside the row (quick Start). */
+  action?: (t: Task) => React.ReactNode;
 }) {
   const open = useOpenTask();
-  const shown = limit ? tasks.slice(0, limit) : tasks;
+  // Long sections show `limit` rows and expand IN PLACE (UI state only; the data is untouched).
+  const [expanded, setExpanded] = useState(false);
+  const shown = limit && !expanded ? tasks.slice(0, limit) : tasks;
   return (
     <View>
       <SectionHeader title={title} count={tasks.length} {...(hint ? { hint } : {})} />
@@ -59,14 +69,18 @@ function TaskSection({
         ) : (
           shown.map((t) => {
             const tr = trailing?.(t);
-            return <TaskRow key={t.id} task={t} config={config} onPress={open} {...(tr ? { trailing: tr } : {})} />;
+            return <TaskRow key={t.id} task={t} config={config} onPress={open} {...(tr ? { trailing: tr } : {})} {...(action ? { action: action(t) } : {})} />;
           })
         )}
       </Card>
       {limit && tasks.length > limit ? (
-        <Text size="xs" tone="subtle" style={styles.more}>
-          Showing {limit} of {tasks.length}
-        </Text>
+        <Button
+          label={expanded ? 'Show fewer' : `Show all ${tasks.length}`}
+          variant="ghost"
+          size="compact"
+          fullWidth={false}
+          onPress={() => setExpanded((v) => !v)}
+        />
       ) : null}
     </View>
   );
@@ -102,14 +116,22 @@ export function DeveloperView() {
     <DashboardFrame query={q}>
       {(d: DeveloperDashboard) => (
         <>
-          <KpiGrid>
-            <KpiCard label="Active tasks" value={d.stats.activeTasks} />
-            <KpiCard label="Completed today" value={d.stats.completedToday} tone="success" />
-            <KpiCard label="Overdue" value={d.stats.overdueTasks} tone={d.stats.overdueTasks > 0 ? 'danger' : 'success'} hint={d.stats.overdueTasks > 0 ? 'Needs attention' : 'All on track'} />
-            <KpiCard label="Old pending" value={d.oldPendingTasks.length} tone={d.oldPendingTasks.length > 0 ? 'warning' : 'success'} hint="Missed start/deadline" />
-          </KpiGrid>
-          <TaskSection title="Today's focus" hint="In progress and pending for today, by priority" tasks={sortByPriority(d.todayTasks)} empty="Nothing urgent today." config={config} />
+          <TaskSection
+            title="Today's focus"
+            hint="In progress and pending for today, by priority"
+            tasks={sortByPriority(d.todayTasks)}
+            empty="Nothing urgent today."
+            config={config}
+            limit={5}
+            action={(t) => <QuickStart task={t} />}
+          />
           <TaskSection title="Needs attention" hint="Failed QA or reopened" tasks={d.problemTasks} empty="No failed or reopened tasks." config={config} />
+          <KpiGrid>
+            <KpiCard dense label="Active tasks" value={d.stats.activeTasks} />
+            <KpiCard dense label="Completed today" value={d.stats.completedToday} tone={d.stats.completedToday > 0 ? 'success' : 'default'} />
+            <KpiCard dense label="Overdue" value={d.stats.overdueTasks} tone={d.stats.overdueTasks > 0 ? 'danger' : 'success'} info={OVERDUE_INFO} />
+            <KpiCard dense label="Old pending" value={d.oldPendingTasks.length} tone={d.oldPendingTasks.length > 0 ? 'warning' : 'success'} />
+          </KpiGrid>
           <TaskSection
             title="Old pending"
             hint="Not started and past their start or deadline"
@@ -138,13 +160,13 @@ export function QAView() {
     <DashboardFrame query={q}>
       {(d: QADashboard) => (
         <>
-          <KpiGrid>
-            <KpiCard label="Active tasks" value={d.stats.activeTasks} />
-            <KpiCard label="Passed" value={d.stats.passedTasks} tone="success" />
-            <KpiCard label="Needs retest" value={d.stats.needsRetest} tone={d.stats.needsRetest > 0 ? 'warning' : 'success'} />
-          </KpiGrid>
           <TaskSection title="Ready for QA" tasks={d.myReadyForQA} empty="Nothing waiting for you." config={config} />
           <TaskSection title="Needs retest" hint="Failed or reopened" tasks={[...d.myFailed, ...d.myReopened]} empty="Nothing to retest." config={config} />
+          <KpiGrid>
+            <KpiCard dense label="Active tasks" value={d.stats.activeTasks} />
+            <KpiCard dense label="Passed" value={d.stats.passedTasks} tone={d.stats.passedTasks > 0 ? 'success' : 'default'} />
+            <KpiCard dense label="Needs retest" value={d.stats.needsRetest} tone={d.stats.needsRetest > 0 ? 'warning' : 'success'} />
+          </KpiGrid>
           <TaskSection title="Unassigned in QA" hint="Suggested" tasks={d.unassigned} empty="No unassigned tasks." config={config} limit={8} />
         </>
       )}
@@ -180,13 +202,13 @@ export function TechLeadView({ teamHealth = false }: { teamHealth?: boolean }) {
         return (
           <>
             <KpiGrid>
-              <KpiCard label="In progress" value={k.inProgress} />
-              <KpiCard label="Dev done" value={k.devDone} />
-              <KpiCard label="Blocked" value={k.blockedCount} tone={k.blockedCount > 0 ? 'danger' : 'success'} />
-              <KpiCard label="At risk" value={k.atRiskCount} tone={k.atRiskCount > 0 ? 'warning' : 'success'} />
-              <KpiCard label="Unassigned" value={k.unassignedCount} tone={k.unassignedCount > 0 ? 'warning' : 'default'} />
-              <KpiCard label="Done this week" value={k.completedThisWeek} tone="success" />
-              <KpiCard label="Done last week" value={k.completedLastWeek} />
+              <KpiCard dense label="In progress" value={k.inProgress} />
+              <KpiCard dense label="Dev done" value={k.devDone} />
+              <KpiCard dense label="Blocked" value={k.blockedCount} tone={k.blockedCount > 0 ? 'danger' : 'success'} />
+              <KpiCard dense label="At risk" value={k.atRiskCount} tone={k.atRiskCount > 0 ? 'warning' : 'success'} />
+              <KpiCard dense label="Unassigned" value={k.unassignedCount} tone={k.unassignedCount > 0 ? 'warning' : 'default'} />
+              <KpiCard dense label="Done this week" value={k.completedThisWeek} tone={k.completedThisWeek > 0 ? 'success' : 'default'} />
+              <KpiCard dense label="Done last week" value={k.completedLastWeek} />
             </KpiGrid>
 
             <TaskSection
@@ -278,7 +300,7 @@ export function ProjectManagerView() {
         <>
           <KpiGrid>
             <KpiCard label="Total tasks" value={d.totalTasks} />
-            <KpiCard label="Completed" value={d.completedTasks} tone="success" />
+            <KpiCard label="Completed" value={d.completedTasks} tone={d.completedTasks > 0 ? 'success' : 'default'} />
             <KpiCard label="Overdue" value={d.overdueTasks} tone={d.overdueTasks > 0 ? 'danger' : 'success'} />
             <KpiCard label="Open tickets" value={d.openTickets} tone={d.openTickets > 0 ? 'warning' : 'success'} />
           </KpiGrid>
@@ -413,7 +435,7 @@ export function ClientView() {
         <>
           <KpiGrid>
             <KpiCard label="Total projects" value={d.summary.totalProjects} />
-            <KpiCard label="Active projects" value={d.summary.activeProjects} tone="success" />
+            <KpiCard label="Active projects" value={d.summary.activeProjects} tone={d.summary.activeProjects > 0 ? 'success' : 'default'} />
             <KpiCard label="Overall completion" value={`${d.summary.completionPct}%`} />
             <KpiCard label="Open issues" value={d.summary.openTickets} tone={d.summary.openTickets > 0 ? 'danger' : 'success'} />
           </KpiGrid>
@@ -466,11 +488,10 @@ export function ClientView() {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   listCard: { paddingHorizontal: 12 },
-  emptyText: { paddingVertical: 14 },
-  more: { marginTop: 4 },
-  blockers: { gap: 6, marginTop: 8 },
+  emptyText: { paddingVertical: 16 },
+  blockers: { gap: 4, marginTop: 8 },
   cardGap: { gap: 8 },
-  gapBelow: { marginBottom: 10 },
+  gapBelow: { marginBottom: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   statusLabel: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });

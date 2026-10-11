@@ -135,7 +135,7 @@ export function TimesheetScreen() {
                     key={e.id}
                     onPress={() => setSheet({ entry: e })}
                     accessibilityRole="button"
-                    accessibilityLabel={`${e.task_title}, ${clock(e.started_at, tz)} to ${clock(e.ended_at, tz)}, ${formatDuration(e.minutes)}. Edit`}
+                    accessibilityLabel={`${e.task_title}, ${clock(e.started_at, tz)} to ${clock(e.ended_at, tz)}, ${formatDuration(e.minutes)}. ${e.source === 'manual' ? 'Manual' : 'Timer'}${e.auto_closed ? '. Auto-closed' : ''}${e.note ? `. ${e.note}` : ''}. Edit`}
                     style={[styles.entry, { minHeight: t.minTouch, borderColor: t.colors.line, borderRadius: t.radius.xl, backgroundColor: t.colors.surface }]}
                     testID={`entry-${e.id}`}
                   >
@@ -172,6 +172,7 @@ export function TimesheetScreen() {
         onClose={() => setSheet(null)}
         timezone={tz}
         defaultDate={isCurrentOrFuture ? today : to}
+        todayDate={today}
         entry={sheet?.entry ?? null}
       />
     </Screen>
@@ -180,10 +181,10 @@ export function TimesheetScreen() {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  head: { gap: 10, marginBottom: 12 },
+  head: { gap: 8, marginBottom: 12 },
   nav: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   gap: { gap: 8, marginBottom: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  day: { gap: 8, marginBottom: 14 },
-  entry: { borderWidth: 1, padding: 10, gap: 4 },
+  day: { gap: 8, marginBottom: 16 },
+  entry: { borderWidth: 1, padding: 12, gap: 4 },
 });

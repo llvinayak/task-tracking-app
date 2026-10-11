@@ -10,10 +10,11 @@ import {
   Banner,
   Button,
   Card,
-  Chip,
+  ChoiceChips,
   EmptyState,
   ErrorState,
   Input,
+  ReadOnlyNotice,
   LoadingState,
   StaleBanner,
   Text,
@@ -29,6 +30,9 @@ import { isSafeUrl } from '@/utils/html';
 import { statusLabel } from '@/utils/taskUtils';
 
 import { StatusChip } from './TaskParts';
+
+/** Sentence-case role names (the API values are upper-case codes). */
+export const ROLE_LABEL: Record<AssigneeRole, string> = { DEV: 'Developer', QA: 'QA', SUPPORT: 'Support', REVIEWER: 'Reviewer' };
 
 /* ── Overview ────────────────────────────────────────────────────────────── */
 
@@ -56,6 +60,9 @@ export function OverviewTab({
   const t = useTheme();
   return (
     <View style={styles.stack}>
+      {task.is_blocked ? (
+        <Banner tone="danger" message={`Blocked${task.blocker_description ? `: ${task.blocker_description}` : ''}`} />
+      ) : null}
       <Card style={styles.stack}>
         <Text size="xs" tone="subtle" weight="semibold">
           DESCRIPTION
@@ -80,10 +87,6 @@ export function OverviewTab({
           <Field label="Module" value={task.module} />
         </View>
       </Card>
-
-      {task.is_blocked ? (
-        <Banner tone="danger" message={`Blocked${task.blocker_description ? `: ${task.blocker_description}` : ''}`} />
-      ) : null}
 
       {task.parentTask ? (
         <Card style={styles.stack}>
@@ -165,6 +168,7 @@ export function PeopleTab({ task, canAssign }: { task: TaskDetail; canAssign: bo
     <View style={styles.stack}>
       {assignees.isError ? <StaleBanner message={getErrorMessage(assignees.error)} /> : null}
       {actionError ? <Banner message={actionError} testID="assignee-error" /> : null}
+      {!canAssign ? <ReadOnlyNotice message="Only people with edit access can change assignees." /> : null}
       {list.length === 0 ? (
         <EmptyState title="No one assigned" message="This task has no assignees yet." />
       ) : (
@@ -174,7 +178,7 @@ export function PeopleTab({ task, canAssign }: { task: TaskDetail; canAssign: bo
               <View style={styles.flex1}>
                 <Text weight="semibold">{a.user?.name ?? `User ${a.user_id}`}</Text>
                 <Text size="xs" tone="muted">
-                  {a.role}
+                  {ROLE_LABEL[a.role as AssigneeRole] ?? a.role}
                   {a.is_primary ? ' · Primary' : ''}
                 </Text>
               </View>
@@ -183,16 +187,20 @@ export function PeopleTab({ task, canAssign }: { task: TaskDetail; canAssign: bo
               <View style={styles.actions}>
                 {!a.is_primary ? (
                   <Button
-                    label={`Make ${a.user?.name ?? 'user'} primary`}
+                    label="Make primary"
+                    accessibilityLabel={`Make primary: ${a.user?.name ?? 'user'}`}
                     variant="secondary"
+                    size="compact"
                     fullWidth={false}
                     loading={makePrimary.isPending && makePrimary.variables?.id === a.id}
                     onPress={() => void run(makePrimary.mutateAsync(a))}
                   />
                 ) : null}
                 <Button
-                  label={`Remove ${a.user?.name ?? 'user'}`}
-                  variant="ghost"
+                  label="Remove"
+                  accessibilityLabel={`Remove ${a.user?.name ?? 'user'}`}
+                  variant="dangerOutline"
+                  size="compact"
                   fullWidth={false}
                   onPress={() =>
                     Alert.alert('Remove assignee?', `${a.user?.name ?? 'This person'} will be removed from this task.`, [
@@ -210,13 +218,14 @@ export function PeopleTab({ task, canAssign }: { task: TaskDetail; canAssign: bo
       {canAssign ? (
         <>
           <Button label="Add assignee" variant="secondary" onPress={() => setOpen(true)} />
-          <BottomSheet visible={open} title="Add assignee" onClose={() => setOpen(false)}>
+          <BottomSheet visible={open} title="Add assignee" onClose={() => setOpen(false)} scroll={false}>
             <View style={styles.sheetBody}>
-              <View style={styles.chipRow}>
-                {ASSIGNEE_ROLES.map((r) => (
-                  <Chip key={r} label={r} selected={role === r} onPress={() => setRole(r)} />
-                ))}
-              </View>
+              <ChoiceChips
+                accessibilityLabel="Assignee role"
+                value={role}
+                onChange={setRole}
+                options={ASSIGNEE_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
+              />
               {team.isLoading ? <LoadingState label="Loading team..." /> : null}
               {team.isError ? (
                 <ErrorState message={getErrorMessage(team.error)} onRetry={() => void team.refetch()} />
@@ -230,7 +239,7 @@ export function PeopleTab({ task, canAssign }: { task: TaskDetail; canAssign: bo
                 renderItem={({ item }) => (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Assign ${item.user?.name} as ${role}`}
+                    accessibilityLabel={`Assign ${item.user?.name} as ${ROLE_LABEL[role]}`}
                     onPress={async () => {
                       const ok = await run(add.mutateAsync({ user_id: item.user_id, role }));
                       if (ok) setOpen(false);
@@ -301,6 +310,7 @@ export function CommentsTab({ taskId }: { taskId: number }) {
         {error ? <Banner message={error} testID="comment-error" /> : null}
         <Input
           label="Add a comment"
+          counter
           maxLength={COMMENT_MAX}
           value={text}
           onChangeText={setText}
@@ -412,15 +422,14 @@ export function AttachmentsTab({ task }: { task: TaskDetail }) {
 }
 
 const styles = StyleSheet.create({
-  stack: { gap: 10 },
+  stack: { gap: 8 },
   flex1: { flex: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   field: { minWidth: '40%', gap: 2 },
   subtask: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  sheetBody: { padding: 16, gap: 10, maxHeight: 480 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  sheetBody: { padding: 16, gap: 8, maxHeight: 480 },
   candidate: { justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
   attachment: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderWidth: 1 },
 });

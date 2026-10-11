@@ -3,7 +3,7 @@ import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import type { Project } from '@/api/models';
 import { getErrorMessage } from '@/api/errors';
-import { BottomSheet, Dot, ErrorState, Input, LoadingState, StaleBanner, Text } from '@/components/ui';
+import { BottomSheet, Dot, ErrorState, Icon, Input, LoadingState, OptionRow, StaleBanner, Text } from '@/components/ui';
 import { useProjects } from '@/hooks/queries';
 import { useProjectStore } from '@/store/projectStore';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -23,7 +23,7 @@ export function ProjectButton({ onPress }: { onPress: () => void }) {
       accessibilityLabel={`Project: ${label}. Change project${unverified ? '. Could not verify this project right now' : ''}`}
       style={[
         styles.button,
-        { minHeight: t.minTouch, borderColor: t.colors.lineStrong, borderRadius: t.radius.xl, backgroundColor: t.colors.surface },
+        { minHeight: t.minTouch, borderColor: t.colors.fieldBorder, borderRadius: t.radius.xl, backgroundColor: t.colors.surface },
       ]}
     >
       <Dot color={selected?.color} size={10} />
@@ -35,15 +35,12 @@ export function ProjectButton({ onPress }: { onPress: () => void }) {
           Can&apos;t verify
         </Text>
       ) : null}
-      <Text size="xs" tone="subtle" accessibilityElementsHidden>
-        ▾
-      </Text>
+      <Icon name="chevron-down" size={16} tone="subtle" />
     </Pressable>
   );
 }
 
 export function ProjectPickerSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const t = useTheme();
   const { data, isLoading, isError, error, refetch } = useProjects();
   const selected = useProjectStore((s) => s.selected);
   const select = useProjectStore((s) => s.select);
@@ -64,7 +61,7 @@ export function ProjectPickerSheet({ visible, onClose }: { visible: boolean; onC
   };
 
   return (
-    <BottomSheet visible={visible} title="Select project" onClose={onClose}>
+    <BottomSheet visible={visible} title="Select project" onClose={onClose} scroll={false}>
       {isError && data ? <StaleBanner message={getErrorMessage(error)} /> : null}
       <View style={styles.search}>
         <Input
@@ -94,28 +91,13 @@ export function ProjectPickerSheet({ visible, onClose }: { visible: boolean; onC
             const isSelected = item ? selected?.id === item.id : selected === null;
             const name = item ? item.name : 'All Projects';
             return (
-              <Pressable
+              <OptionRow
+                label={name}
+                description={item?.status && item.status !== 'active' ? item.status.replace(/_/g, ' ') : undefined}
+                leading={<Dot color={item?.color} size={10} />}
+                selected={isSelected}
                 onPress={() => choose(item)}
-                accessibilityRole="radio"
-                accessibilityLabel={name}
-                accessibilityState={{ selected: isSelected }}
-                style={[styles.row, { minHeight: t.minTouch, borderBottomColor: t.colors.lineFaint }]}
-              >
-                <Dot color={item?.color} size={10} />
-                <View style={styles.flex1}>
-                  <Text weight={isSelected ? 'semibold' : 'medium'}>{name}</Text>
-                  {item?.status && item.status !== 'active' ? (
-                    <Text size="2xs" tone="subtle">
-                      {item.status.replace(/_/g, ' ')}
-                    </Text>
-                  ) : null}
-                </View>
-                {isSelected ? (
-                  <Text weight="bold" tone="brand">
-                    ✓ Selected
-                  </Text>
-                ) : null}
-              </Pressable>
+              />
             );
           }}
           ListFooterComponent={
@@ -136,6 +118,5 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   search: { paddingHorizontal: 16, paddingVertical: 8 },
   state: { height: 220 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   none: { padding: 16 },
 });

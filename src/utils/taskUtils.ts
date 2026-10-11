@@ -118,6 +118,24 @@ export function dueLabel(
   return { text: formatDay(task.due_date), tone: 'normal' };
 }
 
+/**
+ * The ONE due-date wording used everywhere on mobile (card text AND its accessible name):
+ * "3d overdue" / "Due today" / "Due tomorrow" / "Due 13 Oct". Urgency is always on (the web only
+ * highlights it under its Overdue chip); finished tasks are calm ("Due 13 Oct").
+ */
+export function dueDisplay(task: Task, formatDay: (v: string) => string): DueLabel {
+  if (!task.due_date) return null;
+  const days = daysFromToday(task.due_date);
+  if (days === null) return null;
+  if (!DONE_STATUSES.has(task.status)) {
+    if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: 'danger' };
+    if (days === 0) return { text: 'Due today', tone: 'danger' };
+    if (days === 1) return { text: 'Due tomorrow', tone: 'warning' };
+    if (days <= 3) return { text: `Due ${formatDay(task.due_date)}`, tone: 'warning' };
+  }
+  return { text: `Due ${formatDay(task.due_date)}`, tone: 'normal' };
+}
+
 /* ── Code / initials ─────────────────────────────────────────────────────── */
 
 /** Client-built code (same as the web): first 4 letters of project name + padded id. */

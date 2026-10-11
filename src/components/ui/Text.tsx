@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text as RNText, type TextProps as RNTextProps } from 'react-native';
 
-import { useTheme } from '@/theme/ThemeProvider';
+import { useFontsLoaded, useTheme } from '@/theme/ThemeProvider';
 import type { FontWeight, TypeSize } from '@/theme/tokens';
 
 export type TextTone =
@@ -19,11 +19,32 @@ export type TextTone =
 export interface TextProps extends RNTextProps {
   size?: TypeSize;
   weight?: FontWeight;
+  /** `faint` is for disabled labels and decorative glyphs only; it never carries content. */
   tone?: TextTone;
+  /** Caps system font scaling for tight elements (tab labels 1.15, badges 1.3 ...). */
+  maxFontScale?: number;
+  /** Tabular figures for clocks, durations, KPI values. */
+  numeric?: boolean;
 }
 
-export function Text({ size = 'base', weight = 'regular', tone = 'default', style, ...rest }: TextProps) {
+/** Font face for a weight: Inter family once loaded (Android: no fontWeight), else system font + fontWeight. */
+export function useFontFace(weight: FontWeight = 'regular') {
   const t = useTheme();
+  const fontsLoaded = useFontsLoaded();
+  return fontsLoaded ? { fontFamily: t.fontFamilies[weight] } : { fontWeight: t.fontWeights[weight] };
+}
+
+export function Text({
+  size = 'base',
+  weight = 'regular',
+  tone = 'default',
+  maxFontScale,
+  numeric = false,
+  style,
+  ...rest
+}: TextProps) {
+  const t = useTheme();
+  const face = useFontFace(weight);
   const colorByTone: Record<TextTone, string> = {
     default: t.colors.fg,
     muted: t.colors.fgMuted,
@@ -36,11 +57,14 @@ export function Text({ size = 'base', weight = 'regular', tone = 'default', styl
     info: t.colors.info.fg,
     onBrand: t.colors.onBrand,
   };
+  // Android needs one family per weight; setting fontWeight on top would synthesise bold.
   return (
     <RNText
       {...rest}
+      {...(maxFontScale !== undefined ? { maxFontSizeMultiplier: maxFontScale } : {})}
       style={[
-        { color: colorByTone[tone], fontWeight: t.fontWeights[weight], ...t.typography[size] },
+        { color: colorByTone[tone], ...face, ...t.typography[size] },
+        numeric && { fontVariant: ['tabular-nums'] },
         style,
       ]}
     />

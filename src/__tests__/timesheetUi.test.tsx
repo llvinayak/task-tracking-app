@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert, type AlertButton } from 'react-native';
+import { Alert, Modal, ScrollView, type AlertButton } from 'react-native';
 
 import { AppError } from '@/api/errors';
 import { parseTasks } from '@/api/models';
@@ -12,6 +12,7 @@ import { TimesheetScreen } from '@/features/timesheet/TimesheetScreen';
 import { useAuthStore } from '@/store/authStore';
 import { rawTask, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
+import { labelInNameViolations } from '@/test/a11y';
 
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
@@ -135,7 +136,8 @@ describe('Timesheet week view', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Previous week' }));
     await screen.findByText(/28 Sep 2026/);
     fireEvent.press(screen.getByRole('button', { name: 'This week' }));
-    expect(await screen.findByText(/Mon, 5 Oct 2026/)).toBeTruthy();
+    // The week label AND the Monday day header both match once the data has loaded: do not race on a single match.
+    expect((await screen.findAllByText(/Mon, 5 Oct 2026/)).length).toBeGreaterThan(0);
   });
 
   it('crosses a year boundary', async () => {
@@ -208,7 +210,7 @@ describe('Add time', () => {
   it('"All tasks" searches by text (min 2 chars) and warns that the server decides', async () => {
     await open();
     fireEvent.press(screen.getByRole('button', { name: 'Choose a task' }));
-    fireEvent.press(await screen.findByRole('button', { name: 'All tasks' }));
+    fireEvent.press(await screen.findByRole('radio', { name: 'All tasks' }));
     expect(screen.getByText('Type at least 2 characters.')).toBeTruthy();
     expect(screen.getByText(/You can only log time on tasks you are assigned to/)).toBeTruthy();
     fireEvent.changeText(screen.getByLabelText('Search tasks'), 'login');
@@ -249,7 +251,7 @@ describe('Add time', () => {
     ['no task', () => undefined, 'Pick a task first.'],
     ['end before start', () => fillTimes('11:00', '09:30'), 'End time must be after the start time.'],
     ['future', () => fillTimes('15:00', '16:00'), 'Cannot log time in the future.'],
-    ['bad time', () => fillTimes('9.30', '11:00'), 'Enter times as HH:mm (for example 09:30).'],
+    ['bad time', () => fillTimes('2599', '11:00'), 'Enter times as HH:mm (for example 09:30).'],
     ['bad date', () => fillTimes('09:30', '11:00', '10/10/2026'), 'Enter a valid date (yyyy-MM-dd).'],
     ['future day', () => fillTimes('09:30', '11:00', '2026-10-12'), 'Cannot log time in the future.'],
   ])('client rule: %s', async (name, setup, message) => {
@@ -529,5 +531,162 @@ describe('L3: the default week follows the clock', () => {
     freezeDate(new Date(Date.UTC(2026, 9, 12, 10, 0, 0))); // Monday
     render();
     expect(await screen.findByText(/Mon, 12 Oct 2026 to Sun, 18 Oct 2026/)).toBeTruthy();
+  });
+});
+
+describe('Add time: typing aids and the discard guard (Stage 2)', () => {
+  const open = async () => {
+    render();
+    await screen.findByTestId('week-total');
+    fireEvent.press(screen.getByRole('button', { name: 'Add time' }));
+    await screen.findByTestId('tz-banner');
+  };
+
+  it('digits only: the dashes and the colon are inserted while typing, and a weekday label shows', async () => {
+    await open();
+    fireEvent.changeText(screen.getByLabelText('Date (yyyy-MM-dd)'), '20261008');
+    expect(screen.getByLabelText('Date (yyyy-MM-dd)').props.value).toBe('2026-10-08');
+    expect(screen.getByTestId('date-weekday')).toHaveTextContent('Thu, 8 Oct 2026');
+    fireEvent.changeText(screen.getByLabelText('Start (HH:mm)'), '0930');
+    expect(screen.getByLabelText('Start (HH:mm)').props.value).toBe('09:30');
+    fireEvent.changeText(screen.getByLabelText('Date (yyyy-MM-dd)'), '2026');
+    expect(screen.getByTestId('date-weekday')).toHaveTextContent('Not a valid date yet');
+    expect(screen.getByLabelText('Start (HH:mm)').props.keyboardType).toBe('number-pad');
+  });
+
+  it('Today / Yesterday presets use the COMPANY date', async () => {
+    await open();
+    fireEvent.press(screen.getByRole('button', { name: 'Yesterday' }));
+    expect(screen.getByLabelText('Date (yyyy-MM-dd)').props.value).toBe('2026-10-09');
+    fireEvent.press(screen.getByRole('button', { name: 'Today' }));
+    expect(screen.getByLabelText('Date (yyyy-MM-dd)').props.value).toBe('2026-10-10');
+  });
+
+  it('+/-15 minute nudges change the typed time, are clamped, and are disabled until the time is valid', async () => {
+    await open();
+    expect(screen.getByRole('button', { name: '+15 minutes, start time' }).props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByLabelText('Start (HH:mm)'), '09:50');
+    fireEvent.press(screen.getByRole('button', { name: '+15 minutes, start time' }));
+    expect(screen.getByLabelText('Start (HH:mm)').props.value).toBe('10:05');
+    fireEvent.press(screen.getByRole('button', { name: '-15 minutes, start time' }));
+    expect(screen.getByLabelText('Start (HH:mm)').props.value).toBe('09:50');
+    fireEvent.changeText(screen.getByLabelText('End (HH:mm)'), '23:55');
+    fireEvent.press(screen.getByRole('button', { name: '+15 minutes, end time' }));
+    expect(screen.getByLabelText('End (HH:mm)').props.value).toBe('23:59');
+  });
+
+  it('Cancel with nothing typed just closes; with edits it asks "Discard changes?" and Keep editing stays', async () => {
+    await open();
+    fireEvent.press(screen.getByRole('button', { name: 'Cancel Add time' }));
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('tz-banner')).toBeNull();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Add time' }));
+    await screen.findByTestId('tz-banner');
+    fireEvent.changeText(screen.getByLabelText('Start (HH:mm)'), '0930');
+    fireEvent.press(screen.getByRole('button', { name: 'Cancel Add time' }));
+    expect(lastAlert().title).toBe('Discard changes?');
+    expect(screen.getByTestId('tz-banner')).toBeTruthy(); // still open
+    act(() => lastAlert().buttons.find((b) => b.text === 'Discard')!.onPress!());
+    expect(screen.queryByTestId('tz-banner')).toBeNull();
+  });
+
+  it('"Add time" stays disabled until the company timezone is known', async () => {
+    api.getTimesheet.mockImplementation(() => new Promise(() => undefined));
+    render();
+    expect(screen.getByRole('button', { name: 'Add time' }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByTestId('tz-wait')).toBeTruthy();
+  });
+
+  it('the footer actions are outside the scrolling body: Add entry is reachable with the form open', async () => {
+    await open();
+    expect(screen.getByRole('button', { name: 'Add entry' })).toBeTruthy();
+  });
+});
+
+describe('Add time: pilot layout fixes', () => {
+  const open = async () => {
+    render();
+    await screen.findByTestId('week-total');
+    fireEvent.press(screen.getByRole('button', { name: 'Add time' }));
+    await screen.findByTestId('tz-banner');
+  };
+
+  it('no timezone mismatch: "company time" is a quiet helper line, not a banner; a mismatch still gets the banner', async () => {
+    await open();
+    const note = screen.getByTestId('tz-banner');
+    expect(note).toHaveTextContent('Times are in company time (Asia/Kolkata).');
+    expect(note.props.accessibilityRole).not.toBe('alert');
+  });
+
+  it('a device/company mismatch keeps the warning banner (an alert)', async () => {
+    jest.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(0);
+    await open();
+    expect(screen.getByTestId('tz-banner').props.accessibilityRole).toBe('alert');
+  });
+
+  it('the error is in the sticky footer (above the buttons) so it shows however far the form is scrolled', async () => {
+    await open();
+    fireEvent.press(screen.getByRole('button', { name: 'Add entry' }));
+    const err = await screen.findByTestId('entry-error');
+    // Walk up to the sheet's Modal: no ScrollView (the sheet body) in between.
+    let n = err.parent;
+    let inScroll = false;
+    while (n && n.type !== Modal) {
+      if (n.type === ScrollView) inScroll = true;
+      n = n.parent;
+    }
+    expect(n?.type).toBe(Modal);
+    expect(inScroll).toBe(false);
+    expect(err).toHaveTextContent('Pick a task first.');
+  });
+
+  it('Save/Add and Delete share ONE footer row; Confirm entry as correct lives in the body', async () => {
+    api.getTimesheet.mockImplementation(async (from, to) =>
+      sheet({ from, to, days: [{ date: '2026-10-09', minutes: 450, entries: [entry({ id: 9, auto_closed: true, reviewed_at: null })] }] }),
+    );
+    render();
+    await screen.findByTestId('week-total');
+    fireEvent.press(await screen.findByLabelText(/Fix login, .*Edit/));
+    await screen.findByRole('button', { name: 'Save entry' });
+    expect(screen.getByRole('button', { name: 'Delete entry' })).toBeTruthy();
+    const rowOf = (name: string) => {
+      let n = screen.getByRole('button', { name }).parent;
+      while (n && Object.assign({}, ...[n.props.style].flat(4).filter(Boolean)).flexDirection !== 'row') n = n.parent;
+      return n;
+    };
+    expect(rowOf('Save entry')).toBe(rowOf('Delete entry'));
+    const confirm = screen.getByRole('button', { name: 'Confirm entry as correct' });
+    let inScroll = false;
+    for (let n = confirm.parent; n && n.type !== Modal; n = n.parent) if (n.type === ScrollView) inScroll = true;
+    expect(inScroll).toBe(true);
+  });
+
+  it('the Note field has a counter and the task select shows a chevron', async () => {
+    await open();
+    fireEvent.changeText(screen.getByLabelText('Note (optional)'), 'x'.repeat(900));
+    expect(screen.getByText('900/1000')).toBeTruthy();
+    expect(screen.getByText('Type 4 digits for a time, e.g. 0930.')).toBeTruthy();
+  });
+
+  it('typing 930 gives 09:30 (first digit 3-9 zero-pads the hour)', async () => {
+    await open();
+    fireEvent.changeText(screen.getByLabelText('Start (HH:mm)'), '930');
+    expect(screen.getByLabelText('Start (HH:mm)').props.value).toBe('09:30');
+  });
+});
+
+
+describe('Label in Name on Timesheet and the Add time sheet', () => {
+  it('week view, entry rows, the sheet and the task picker', async () => {
+    render();
+    await screen.findByTestId('week-total');
+    expect(labelInNameViolations()).toEqual([]);
+    fireEvent.press(screen.getByRole('button', { name: 'Add time' }));
+    await screen.findByTestId('tz-banner');
+    expect(labelInNameViolations()).toEqual([]);
+    fireEvent.press(screen.getByRole('button', { name: 'Choose a task' }));
+    await screen.findByRole('button', { name: 'Choose Fix login' });
+    expect(labelInNameViolations()).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, userEvent, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Alert } from 'react-native';
 
 import { parseProjects, parseStatusConfig, parseTaskDetail, type TaskDetail } from '@/api/models';
 import * as projectsApi from '@/api/projectsApi';
@@ -78,6 +79,8 @@ beforeEach(() => {
   tickets.getAssignableUsers.mockResolvedValue([{ id: 7, name: 'Grace' }, { id: 9, name: 'Linus' }]);
   time.getRunningTimer.mockResolvedValue(null);
   tasks.getTaskAssignees.mockResolvedValue([]);
+  // Marking a ticket Closed now confirms first: these tests are about locks and logout, so they agree at once.
+  jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.text === 'Mark Closed')?.onPress?.());
 });
 
 describe('L2: ticket status chips and the assignee change share one pending flag and lock', () => {

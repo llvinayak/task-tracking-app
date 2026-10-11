@@ -4,7 +4,8 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
-import { ErrorState, LoadingState, Screen, Text } from '@/components/ui';
+import { RichText } from '@/components/RichText';
+import { Button, Card, ErrorState, Screen, SkeletonDetailHeader, Text } from '@/components/ui';
 import { useTask, useTaskConfig } from '@/hooks/queries';
 import { useMenuAccess } from '@/hooks/useMenuAccess';
 import type { RootStackParamList } from '@/navigation/types';
@@ -24,7 +25,7 @@ export function QATaskScreen() {
   if (task.isLoading) {
     return (
       <Screen edges={['left', 'right', 'bottom']}>
-        <LoadingState label="Loading task..." />
+        <SkeletonDetailHeader label="Loading task..." />
       </Screen>
     );
   }
@@ -41,6 +42,7 @@ export function QATaskScreen() {
     );
   }
   const data = task.data;
+  const owners = [data.devOwner ? `Dev: ${data.devOwner.name}` : null, data.qaOwner ? `QA: ${data.qaOwner.name}` : null].filter(Boolean).join(' · ');
   return (
     <Screen scroll edges={['left', 'right', 'bottom']} onRefresh={() => void task.refetch()} refreshing={task.isRefetching}>
       <View style={styles.head}>
@@ -51,11 +53,34 @@ export function QATaskScreen() {
           {data.title}
         </Text>
         <StatusChip status={data.status} config={config} />
+        {owners ? (
+          <Text size="sm" tone="muted" testID="qa-owners">
+            {owners}
+          </Text>
+        ) : null}
+        <Button
+          label="Open task"
+          icon="chevron-forward"
+          iconPosition="end"
+          accessibilityLabel={`Open task ${data.title}`}
+          variant="secondary"
+          size="compact"
+          fullWidth={false}
+          onPress={() => nav.navigate('TaskDetail', { taskId: data.id })}
+        />
       </View>
+      {data.description ? (
+        <Card style={styles.desc} testID="qa-description">
+          <Text size="xs" tone="subtle" weight="semibold">
+            DESCRIPTION
+          </Text>
+          <RichText html={data.description} emptyLabel="No description." />
+        </Card>
+      ) : null}
       {/* The server has no project/assignee checks on QA endpoints: this gate is a courtesy. */}
       <QAPanel taskId={data.id} status={data.status} canAct={canView('/qa')} />
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({ head: { gap: 6, marginBottom: 12 } });
+const styles = StyleSheet.create({ head: { gap: 4, marginBottom: 12 }, desc: { gap: 8, marginBottom: 12 } });

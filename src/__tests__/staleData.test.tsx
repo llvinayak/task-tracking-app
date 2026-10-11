@@ -52,7 +52,7 @@ const menus = menuApi as jest.Mocked<typeof menuApi>;
 const time = timeApi as jest.Mocked<typeof timeApi>;
 const qa = qaApi as jest.Mocked<typeof qaApi>;
 
-const detail = (): TaskDetail => parseTaskDetail({ ...rawTask(), statusLogs: [], attachments: [] }) as TaskDetail;
+const detail = (): TaskDetail => parseTaskDetail({ ...rawTask({ status: 'READY_FOR_QA' }), statusLogs: [], attachments: [] }) as TaskDetail; // READY_FOR_QA: the QA tab is only shown for tasks in the QA flow (or with the /qa menu)
 const NETWORK = new AppError({ kind: 'network', message: "Can't reach the server. Check your connection and try again." });
 
 beforeEach(() => {
@@ -97,7 +97,8 @@ describe('M1/M2: a failed BACKGROUND refetch keeps the stale data and shows a ba
   it('People tab keeps the assignees and shows a banner', async () => {
     const { queryClient } = renderWithProviders(<TaskDetailScreen />);
     await screen.findByText('Fix login redirect');
-    fireEvent.press(screen.getByRole('button', { name: 'People' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'More' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'People' }));
     expect(await screen.findByText('Grace Hopper')).toBeTruthy();
 
     api.getTaskAssignees.mockRejectedValue(NETWORK);
@@ -112,7 +113,7 @@ describe('M1/M2: a failed BACKGROUND refetch keeps the stale data and shows a ba
   it('Comments tab keeps the thread (and the composer) and shows a banner', async () => {
     const { queryClient } = renderWithProviders(<TaskDetailScreen />);
     await screen.findByText('Fix login redirect');
-    fireEvent.press(screen.getByRole('button', { name: 'Comments' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'Comments' }));
     expect(await screen.findByText('hello there')).toBeTruthy();
 
     api.getTaskComments.mockRejectedValue(NETWORK);
@@ -127,7 +128,7 @@ describe('M1/M2: a failed BACKGROUND refetch keeps the stale data and shows a ba
   it('QA tab keeps the summary when a refetch fails', async () => {
     const { queryClient } = renderWithProviders(<TaskDetailScreen />);
     await screen.findByText('Fix login redirect');
-    fireEvent.press(screen.getByRole('button', { name: 'QA' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'QA' }));
     expect(await screen.findByLabelText('Total: 1')).toBeTruthy();
     qa.getQASummary.mockRejectedValue(NETWORK);
     await act(async () => {

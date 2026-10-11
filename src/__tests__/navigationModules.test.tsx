@@ -137,7 +137,8 @@ describe('My Day pending badge', () => {
     renderWithProviders(<RootNavigator />, { navigation: true });
     expect(await screen.findByLabelText('My Day, not filed yet')).toBeTruthy();
     await settle();
-    expect(screen.getByText('1', { includeHiddenElements: true })).toBeTruthy(); // the badge itself
+    // The numeric tabBarBadge was replaced by a dot inside the icon (plan 4.1): no "1" is rendered any more.
+    expect(screen.queryByText('1', { includeHiddenElements: true })).toBeNull();
   });
 
   it('no badge when nothing is pending', async () => {
@@ -244,7 +245,7 @@ describe('Offline banner above the tab bar', () => {
   });
 });
 
-describe('running timer banner above the tab bar', () => {
+describe('running timer strip in the screen header', () => {
   it('shows on every tab while a timer runs', async () => {
     time.getRunningTimer.mockResolvedValue(
       timeApi.parseRunningTimer({ id: 1, started_at: '2026-10-10T09:00:00Z', task: { id: 5, title: 'Fix login', status: 'IN_PROGRESS', project: { id: 2, name: 'Alpha' } } }),

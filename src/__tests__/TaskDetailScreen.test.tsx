@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { ScrollView, Text as RNText } from 'react-native';
 import { Alert, Linking, type AlertButton } from 'react-native';
 
 import { AppError } from '@/api/errors';
@@ -21,6 +22,7 @@ import { useAuthStore } from '@/store/authStore';
 import { rawStatuses, rawTask, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
 import { resetNowProvider, setNowProvider } from '@/utils/dates';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNav = { navigate: jest.fn(), push: jest.fn(), goBack: jest.fn() };
 jest.mock('@react-navigation/native', () => ({
@@ -61,7 +63,11 @@ const detail = (over: Record<string, unknown> = {}): TaskDetail =>
 const perms = (canEdit: boolean, canAssign = false) =>
   parseTaskPermissions({ canEdit, canAssign, canDelete: false, isAssignee: canEdit });
 
-const openTab = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
+/** People / History / Files live under the "More" tab (plan 7.4): open More first, then the section. */
+const openTab = (name: string) => {
+  if (['People', 'History', 'Files'].includes(name)) fireEvent.press(screen.getByRole('tab', { name: 'More' }));
+  fireEvent.press(screen.getByRole('tab', { name }));
+};
 const render = () => renderWithProviders(<TaskDetailScreen />);
 
 beforeEach(() => {
@@ -303,11 +309,11 @@ describe('People / assignee management (UI gating is a courtesy, not security)',
     openTab('People');
     expect(await screen.findByRole('button', { name: 'Add assignee' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Grace Hopper' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Make Linus T primary' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Make Grace Hopper primary' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Make primary: Linus T' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Make primary: Grace Hopper' })).toBeNull();
 
     api.setPrimaryAssignee.mockResolvedValue({});
-    fireEvent.press(screen.getByRole('button', { name: 'Make Linus T primary' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Make primary: Linus T' }));
     await waitFor(() => expect(api.setPrimaryAssignee).toHaveBeenCalledWith(15, 2));
   });
 
@@ -347,11 +353,11 @@ describe('People / assignee management (UI gating is a courtesy, not security)',
     openTab('People');
     fireEvent.press(await screen.findByRole('button', { name: 'Add assignee' }));
 
-    expect(await screen.findByRole('button', { name: 'Assign Dev Dana as DEV' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Assign Dev Dana as Developer' })).toBeTruthy();
     expect(screen.queryByText('Client Carl')).toBeNull();
     expect(screen.queryByText('Gone Gary')).toBeNull();
 
-    fireEvent.press(screen.getByRole('button', { name: 'Assign Dev Dana as DEV' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Assign Dev Dana as Developer' }));
     await waitFor(() => expect(api.addTaskAssignee).toHaveBeenCalledWith(15, { user_id: 10, role: 'DEV' }));
     expect((await screen.findAllByText('Dev Dana is already assigned as DEV on this task.')).length).toBeGreaterThan(0);
   });
@@ -407,5 +413,104 @@ describe('History and attachments', () => {
     expect(await screen.findByText('No history yet')).toBeTruthy();
     openTab('Files');
     expect(await screen.findByText('No attachments')).toBeTruthy();
+  });
+});
+
+describe('Stage 2 layout: action row, sticky tab strip, More', () => {
+  it('shows Overview, Time, Comments and More; QA only when the task is in the QA flow (or /qa is granted)', async () => {
+    render();
+    await screen.findByText('Fix login redirect');
+    expect(screen.getAllByRole('tab').map((t) => t.props.accessibilityLabel)).toEqual(['Overview', 'Time', 'Comments', 'More']);
+    expect(screen.queryByRole('tab', { name: 'People' })).toBeNull(); // People / History / Files are inside More
+  });
+
+  it('a task that is Ready for QA gets the QA tab', async () => {
+    api.getTask.mockResolvedValue(detail({ status: 'READY_FOR_QA' }));
+    render();
+    await screen.findByText('Fix login redirect');
+    expect(screen.getAllByRole('tab').map((t) => t.props.accessibilityLabel)).toEqual(['Overview', 'Time', 'QA', 'Comments', 'More']);
+  });
+
+  it('the tab strip is a DIRECT child of the scroll view and is the sticky header', async () => {
+    render();
+    await screen.findByText('Fix login redirect');
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    expect(scroll.props.stickyHeaderIndices).toEqual([1]); // [head, strip, body, sheet]
+    const kids = React.Children.toArray(scroll.props.children as React.ReactNode) as React.ReactElement[];
+    expect((kids[1]!.type as { name?: string }).name).toBe('TabStrip');
+  });
+
+  it('the status badge and Move to... share one action row; the title is xl', async () => {
+    render();
+    await screen.findByText('Fix login redirect');
+    expect(screen.getByRole('button', { name: 'Move to...' })).toBeTruthy();
+    const title = screen.getByText('Fix login redirect');
+    expect(Object.assign({}, ...[title.props.style].flat(3).filter(Boolean)).fontSize).toBe(18);
+  });
+
+  it('read-only people: a notice explains why the controls are missing', async () => {
+    api.getTaskPermissions.mockResolvedValue(perms(false, false));
+    render();
+    await screen.findByText('Fix login redirect');
+    openTab('People');
+    expect(await screen.findByText('Only people with edit access can change assignees.')).toBeTruthy();
+  });
+
+  it('a blocked task shows the banner above the description', async () => {
+    api.getTask.mockResolvedValue(detail({ is_blocked: true, blocker_description: 'Waiting on API' }));
+    render();
+    await screen.findByText('Blocked: Waiting on API');
+    const texts = screen.UNSAFE_getAllByType(RNText).map((n: { props: { children?: unknown } }) => [n.props.children].flat().filter((c) => typeof c === 'string').join(''));
+    expect(texts.indexOf('Blocked: Waiting on API')).toBeLessThan(texts.indexOf('DESCRIPTION'));
+  });
+});
+
+describe('Pilot fixes (Task Detail)', () => {
+  it('a meta line under the title: due date, Dev and QA as text', async () => {
+    api.getTask.mockResolvedValue(detail({ due_date: '2026-10-12', dev_owner_id: 7, devOwner: { id: 7, name: 'Priya' }, qa_owner_id: 8, qaOwner: { id: 8, name: 'Rahul' } }));
+    render();
+    await screen.findByText('Fix login redirect');
+    expect(screen.getByTestId('task-meta')).toHaveTextContent('Due 12 Oct · Dev: Priya · QA: Rahul');
+  });
+
+  it('the pinned tab strip bleeds out to the screen edges (no gutters)', async () => {
+    render();
+    await screen.findByText('Fix login redirect');
+    const strip = screen.UNSAFE_root.findAll((n: { props: { accessibilityRole?: string } }) => n.props.accessibilityRole === 'tablist')[0]!;
+    expect(Object.assign({}, ...[strip.props.style].flat(3).filter(Boolean)).marginHorizontal).toBe(-16);
+  });
+
+  it('People roles read as words (Developer, QA, Support, Reviewer), not upper-case codes', async () => {
+    api.getTaskPermissions.mockResolvedValue(perms(true, true));
+    render();
+    await screen.findByText('Fix login redirect');
+    openTab('People');
+    fireEvent.press(await screen.findByRole('button', { name: 'Add assignee' }));
+    for (const r of ['Developer', 'QA', 'Support', 'Reviewer']) expect(screen.getByRole('radio', { name: r })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'DEV' })).toBeNull();
+  });
+
+  it('the comment composer has a counter once it is nearly full', async () => {
+    render();
+    await screen.findByText('Fix login redirect');
+    openTab('Comments');
+    fireEvent.changeText(await screen.findByLabelText('Add a comment'), 'x'.repeat(4100));
+    expect(screen.getByText('4100/5000')).toBeTruthy();
+  });
+});
+
+
+describe('Label in Name on the whole Task Detail screen', () => {
+  it('header, tabs, Overview, More/People with the assignee sheet, Comments', async () => {
+    api.getTaskPermissions.mockResolvedValue(perms(true, true));
+    api.getTask.mockResolvedValue(detail({ status: 'READY_FOR_QA', subtasks: [{ id: 3, title: 'Sub', status: 'NOT_STARTED' }], subtaskCount: 1 }));
+    render();
+    await screen.findByText('Fix login redirect');
+    expect(labelInNameViolations()).toEqual([]);
+    openTab('People');
+    fireEvent.press(await screen.findByRole('button', { name: 'Add assignee' }));
+    expect(labelInNameViolations()).toEqual([]);
+    openTab('Comments');
+    expect(labelInNameViolations()).toEqual([]);
   });
 });

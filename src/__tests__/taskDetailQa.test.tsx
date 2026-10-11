@@ -65,7 +65,7 @@ beforeEach(() => {
 const openQaTab = async () => {
   renderWithProviders(<TaskDetailScreen />);
   await screen.findByText('Fix login redirect');
-  fireEvent.press(screen.getByRole('button', { name: 'QA' }));
+  fireEvent.press(screen.getByRole('tab', { name: 'QA' }));
   await screen.findByTestId('qa-summary');
 };
 
@@ -79,7 +79,7 @@ describe('Task Detail QA tab', () => {
     expect(c).toHaveTextContent(/Login works/);
     expect(c).toHaveTextContent(/Failed/);
     expect(c).toHaveTextContent(/Notes: Crashed/);
-    expect(c).toHaveTextContent(/Reopened 2×/);
+    expect(c).toHaveTextContent(/Reopened 2x/);
   });
 
   it('QA actions are hidden without the /qa menu (courtesy gate: the server has no such check)', async () => {
@@ -98,6 +98,7 @@ describe('Task Detail QA tab', () => {
     expect(await screen.findByTestId('qa-verdict')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Pass Login works' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Add test case' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Pass' })).toBeTruthy(); // verdict for READY_FOR_QA
+    // The verdict reads "Pass task"; the case row button reads "Pass" (accessible name "Pass Login works").
+    expect(screen.getByRole('button', { name: 'Pass task' })).toBeTruthy(); // the verdict for READY_FOR_QA (the case row is "Pass Login works")
   });
 });

@@ -16,7 +16,7 @@ export function TimerStatusPromptSheet() {
   const change = useChangeStatus();
 
   return (
-    <BottomSheet visible={!!prompt} title={prompt?.title ?? ''} onClose={dismiss}>
+    <BottomSheet visible={!!prompt} kind="prompt" title={prompt?.title ?? ''} onClose={dismiss}>
       {prompt ? (
         <View style={styles.body}>
           <Text size="sm" weight="semibold" numberOfLines={2}>
@@ -44,4 +44,4 @@ export function TimerStatusPromptSheet() {
   );
 }
 
-const styles = StyleSheet.create({ body: { padding: 16, gap: 10 } });
+const styles = StyleSheet.create({ body: { padding: 16, gap: 8 } });

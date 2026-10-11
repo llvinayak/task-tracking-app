@@ -5,7 +5,7 @@ import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
 import { SEVERITIES, SEVERITY_LABEL, validateNewTicket, type TicketFormErrors } from '@/api/ticketsApi';
-import { Banner, BottomSheet, Button, Chip, Dot, ErrorState, Input, LoadingState, Screen, Text } from '@/components/ui';
+import { Banner, BottomSheet, Button, ChoiceChips, Dot, Icon, ErrorState, Input, LoadingState, OptionRow, Screen, Text } from '@/components/ui';
 import { useProjects } from '@/hooks/queries';
 import { captureSession } from '@/hooks/sessionMutation';
 import { useCreateTicket } from '@/hooks/tickets';
@@ -81,10 +81,11 @@ export function TicketCreateScreen() {
             onPress={() => setSheet(true)}
             accessibilityRole="button"
             accessibilityLabel={`Project: ${project?.name ?? 'not selected'}. Change project`}
-            style={[styles.select, { minHeight: t.minTouch, borderColor: errors.project_id ? t.colors.danger.base : t.colors.lineStrong, borderRadius: t.radius.xl, backgroundColor: t.colors.surface }]}
+            style={[styles.select, { minHeight: t.minTouch, borderColor: errors.project_id ? t.colors.danger.base : t.colors.fieldBorder, borderRadius: t.radius.xl, backgroundColor: t.colors.surface }]}
           >
             {project ? <Dot color={project.color} size={10} /> : null}
-            <Text style={styles.flex1}>{project?.name ?? 'Select a project'}</Text>
+            <Text style={[styles.flex1, !project && { color: t.colors.placeholder }]}>{project?.name ?? 'Select a project'}</Text>
+            <Icon name="chevron-down" size={20} tone="subtle" />
           </Pressable>
           {errors.project_id ? (
             <Text size="xs" tone="danger" accessibilityLiveRegion="polite">
@@ -97,11 +98,12 @@ export function TicketCreateScreen() {
           <Text size="sm" weight="medium" tone="muted">
             Severity
           </Text>
-          <View style={styles.chips}>
-            {SEVERITIES.map((s) => (
-              <Chip key={s} testID={`severity-${s}`} label={SEVERITY_LABEL[s] ?? String(s)} selected={severity === s} onPress={() => setSeverity(s)} />
-            ))}
-          </View>
+          <ChoiceChips
+            accessibilityLabel="Severity"
+            value={severity}
+            onChange={setSeverity}
+            options={SEVERITIES.map((s) => ({ value: s, label: SEVERITY_LABEL[s] ?? String(s), testID: `severity-${s}` }))}
+          />
           {errors.severity ? (
             <Text size="xs" tone="danger">
               {errors.severity}
@@ -109,12 +111,12 @@ export function TicketCreateScreen() {
           ) : null}
         </View>
 
-        <Input label="Client name (optional, used only if the project has no client)" value={clientName} onChangeText={setClientName} maxLength={150} />
+        <Input label="Client name (optional)" helper="Used only if the project has no client." value={clientName} onChangeText={setClientName} maxLength={150} />
 
         <Button label="Create ticket" onPress={() => void submit()} loading={create.isPending} />
       </View>
 
-      <BottomSheet visible={sheet} title="Select project" onClose={() => setSheet(false)}>
+      <BottomSheet visible={sheet} title="Select project" onClose={() => setSheet(false)} scroll={false}>
         <View style={styles.sheet}>
           {projects.isLoading ? <LoadingState label="Loading projects..." /> : null}
           {projects.isError && !projects.data ? <ErrorState message={getErrorMessage(projects.error)} onRetry={() => void projects.refetch()} /> : null}
@@ -123,22 +125,15 @@ export function TicketCreateScreen() {
             keyExtractor={(p) => String(p.id)}
             style={{ maxHeight: 420 }}
             renderItem={({ item }) => (
-              <Pressable
+              <OptionRow
+                label={item.name}
+                leading={<Dot color={item.color} size={10} />}
+                selected={item.id === projectId}
                 onPress={() => {
                   setProjectId(item.id);
                   setSheet(false);
                 }}
-                accessibilityRole="radio"
-                accessibilityLabel={item.name}
-                accessibilityState={{ selected: item.id === projectId }}
-                style={[styles.row, { minHeight: t.minTouch, borderBottomColor: t.colors.lineFaint }]}
-              >
-                <Dot color={item.color} size={10} />
-                <Text weight={item.id === projectId ? 'semibold' : 'medium'} style={styles.flex1}>
-                  {item.name}
-                </Text>
-                {item.id === projectId ? <Text tone="brand">✓ Selected</Text> : null}
-              </Pressable>
+              />
             )}
           />
         </View>
@@ -149,10 +144,9 @@ export function TicketCreateScreen() {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  form: { gap: 14, paddingBottom: 24 },
-  field: { gap: 6 },
+  form: { gap: 16, paddingBottom: 24 },
+  field: { gap: 4 },
   select: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, paddingHorizontal: 12 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   sheet: { padding: 16, gap: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
 });

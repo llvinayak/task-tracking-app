@@ -117,7 +117,7 @@ export function TaskTimePanel({ taskId }: { taskId: number }) {
 }
 
 const styles = StyleSheet.create({
-  col: { gap: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  col: { gap: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 });

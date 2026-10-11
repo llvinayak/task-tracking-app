@@ -1,8 +1,9 @@
 import { DarkTheme, DefaultTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import React, { useEffect, useMemo } from 'react';
-import { AppState, Platform, type AppStateStatus } from 'react-native';
+import { AppState, Platform, View, type AppStateStatus } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -14,6 +15,7 @@ import { RootNavigator } from '@/navigation/RootNavigator';
 import { ConfigErrorScreen } from '@/screens/StatusScreens';
 import { useAuthStore } from '@/store/authStore';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
+import { hideSplash, useAppFonts } from '@/theme/useAppFonts';
 
 /**
  * TanStack Query focus = app in the foreground. Refetch-on-focus and the
@@ -35,6 +37,11 @@ function Shell() {
   useAppStateFocus();
   const t = useTheme();
   const bootstrap = useAuthStore((s) => s.bootstrap);
+
+  // Root/window background follows the theme so there is no white flash in dark mode.
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(t.colors.app).catch(() => undefined);
+  }, [t.colors.app]);
 
   useEffect(() => {
     void bootstrap();
@@ -65,9 +72,13 @@ function Shell() {
 }
 
 export default function App() {
+  const { fontsLoaded, ready } = useAppFonts();
+  // The native splash stays visible until fonts are ready (or 2.5s elapse).
+  if (!ready) return null;
   return (
+    <View style={{ flex: 1 }} onLayout={hideSplash}>
     <SafeAreaProvider>
-      <ThemeProvider>
+      <ThemeProvider fontsLoaded={fontsLoaded}>
         <ErrorBoundary>
           {isApiConfigured() ? (
             <QueryClientProvider client={queryClient}>
@@ -81,5 +92,6 @@ export default function App() {
         </ErrorBoundary>
       </ThemeProvider>
     </SafeAreaProvider>
+    </View>
   );
 }

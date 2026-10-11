@@ -1,11 +1,12 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, AppState } from 'react-native';
+import { AppState } from 'react-native';
 
 import { getErrorMessage, isAppError } from '@/api/errors';
 import type { Assignee, TaskStatusConfig } from '@/api/models';
 import { getTaskStatuses } from '@/api/projectsApi';
 import { serverNowMs } from '@/api/serverClock';
+import { hapticImpact } from '@/lib/haptics';
 import { getRunningTimer, getTaskSessions, startTimer, stopTimer, type RunningTimer } from '@/api/timeApi';
 import { useToast } from '@/components/ui';
 import { currentEpoch, isEpochStale } from './sessionMutation';
@@ -78,10 +79,6 @@ async function loadConfig(qc: QueryClient): Promise<TaskStatusConfig[] | undefin
   }
 }
 
-const announce = (message: string) => {
-  void AccessibilityInfo.announceForAccessibility(message);
-};
-
 /**
  * Timer start/stop changes tracked time, so everything derived from it must be
  * refetched: the running timer, task lists/details/sessions, dashboards, AND
@@ -130,6 +127,7 @@ export function useStartTimer() {
     onSuccess: (res, v, ctx) => {
       if (isEpochStale(ctx?.epoch)) return; // signed out meanwhile: touch nothing
       timerLock = false; // the buttons are free as soon as the server said yes
+      hapticImpact('medium');
       refreshTimerState(qc, [v.task.id, res.stopped?.taskId]);
       let message = 'Timer started';
       if (res.stopped) {
@@ -139,7 +137,6 @@ export function useStartTimer() {
       // One toast slot: keep the warning visible for longer than a normal toast.
       toast.show(res.warning ? `${message}
 ${res.warning}` : message, res.warning ? 'info' : 'success', res.warning ? WARNING_TOAST_MS : undefined);
-      announce(message);
 
       // The config-dependent prompt runs AFTER the mutation has settled: loading the
       // config (possibly slow or offline) must not keep Start/Stop disabled.
@@ -187,11 +184,11 @@ export function useStopTimer() {
     onSuccess: (res, v, ctx) => {
       if (isEpochStale(ctx?.epoch)) return;
       timerLock = false;
+      hapticImpact('medium');
       qc.setQueryData<RunningTimer | null>(keys.runningTimer, null);
       refreshTimerState(qc, [v.timer.task.id]);
       const message = `Timer stopped · ${formatDuration(res.duration_minutes)} logged`;
       toast.show(message, 'success');
-      announce(message);
 
       // Prefer the freshest status we know for this task.
       const cachedStatus = qc.getQueryData<{ status: string }>(keys.task(v.timer.task.id))?.status;

@@ -4,7 +4,7 @@ import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { getErrorMessage } from '@/api/errors';
 import type { Task } from '@/api/models';
 import { validateEntry, NOTE_MAX, type TimesheetEntry } from '@/api/timesheetApi';
-import { BottomSheet, Banner, Button, Chip, ErrorState, Input, LoadingState, Text } from '@/components/ui';
+import { BottomSheet, Banner, Button, ChoiceChips, ErrorState, Icon, Input, LoadingState, Text } from '@/components/ui';
 import { captureSession } from '@/hooks/sessionMutation';
 import { useTimeEntryMutations, useTimeTaskPicker } from '@/hooks/timesheet';
 import { useDebounced } from '@/hooks/useDebounced';
@@ -13,6 +13,19 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { timezonesDiffer, utcMsToWall } from '@/utils/companyTime';
 import { formatDuration } from '@/utils/time';
 import { taskCode } from '@/utils/taskUtils';
+import { addDaysToDateString, formatDateLabel, isValidDateString } from '@/utils/dates';
+import { isHHmm, maskDate, maskTime, shiftHHmm } from '@/utils/timeInput';
+
+/** -15 / +15 minute nudges for a typed HH:mm value (clamped to the day; disabled until the value is valid). */
+function NudgeRow({ value, onChange, what }: { value: string; onChange: (v: string) => void; what: string }) {
+  const ok = isHHmm(value);
+  return (
+    <View style={styles.nudge}>
+      <Button label="-15" accessibilityLabel={`-15 minutes, ${what}`} variant="secondary" size="compact" fullWidth={false} disabled={!ok} onPress={() => onChange(shiftHHmm(value, -15))} />
+      <Button label="+15" accessibilityLabel={`+15 minutes, ${what}`} variant="secondary" size="compact" fullWidth={false} disabled={!ok} onPress={() => onChange(shiftHHmm(value, 15))} />
+    </View>
+  );
+}
 
 function deviceZone(): string {
   try {
@@ -32,12 +45,15 @@ export function TimeEntrySheet({
   onClose,
   timezone,
   defaultDate,
+  todayDate,
   entry,
 }: {
   visible: boolean;
   onClose: () => void;
   timezone: string | null;
   defaultDate: string;
+  /** Company "today" (yyyy-MM-dd) for the Today / Yesterday presets; omitted = no presets. */
+  todayDate?: string;
   entry?: TimesheetEntry | null;
 }) {
   const t = useTheme();
@@ -139,6 +155,10 @@ export function TimeEntrySheet({
   const busy = create.isPending || update.isPending || remove.isPending || confirm.isPending;
   const timesChanged = !!orig && (date !== orig.date || start !== orig.start || end !== orig.end);
   const needsConfirm = !!entry && entry.auto_closed && !entry.reviewed_at;
+  // Anything the user changed since the sheet opened (Cancel / back then asks before discarding).
+  const dirty = entry
+    ? timesChanged || note !== entry.note
+    : !!task || start !== '' || end !== '' || note !== '' || date !== defaultDate;
 
   const submit = async () => {
     if (busy) return;
@@ -226,14 +246,46 @@ export function TimeEntrySheet({
     return v.ok ? v : null;
   }, [date, start, end, tz, crossesMidnight]);
 
+  // The error sits in the footer, right above the buttons: it stays visible however far the form is scrolled.
+  const sheetFooter = (
+    <>
+      {error ? <Banner message={error} testID="entry-error" /> : null}
+      <View style={styles.footerRow}>
+        <Button
+          label={editing ? 'Save entry' : 'Add entry'}
+          style={styles.flex1}
+          onPress={() => void submit()}
+          loading={create.isPending || update.isPending}
+          disabled={busy}
+        />
+        {editing ? (
+          <Button label="Delete entry" variant="dangerOutline" size="compact" inline onPress={confirmDelete} loading={remove.isPending} disabled={busy} />
+        ) : null}
+      </View>
+    </>
+  );
+
   return (
-    <BottomSheet visible={visible} title={editing ? 'Edit time entry' : 'Add time'} onClose={onClose}>
+    <BottomSheet
+      visible={visible}
+      kind="form"
+      scroll={!picking}
+      dirty={dirty && !picking}
+      title={editing ? 'Edit time entry' : 'Add time'}
+      onClose={onClose}
+      footer={picking ? undefined : sheetFooter}
+    >
       {picking ? (
-        <View style={styles.body}>
-          <View style={styles.chips}>
-            <Chip label="Assigned to me" selected={mode === 'mine'} onPress={() => setMode('mine')} />
-            <Chip label="All tasks" selected={mode === 'all'} onPress={() => setMode('all')} />
-          </View>
+        <View style={[styles.body, styles.pickerBody]}>
+          <ChoiceChips
+            accessibilityLabel="Task list"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'mine', label: 'Assigned to me' },
+              { value: 'all', label: 'All tasks' },
+            ]}
+          />
           <Input label="Search tasks" value={search} onChangeText={setSearch} autoCapitalize="none" autoCorrect={false} />
           {mode === 'all' ? (
             <Text size="xs" tone="muted">
@@ -247,7 +299,7 @@ export function TimeEntrySheet({
           <FlatList
             data={tasks.data ?? []}
             keyExtractor={(x: Task) => String(x.id)}
-            style={{ maxHeight: 320 }}
+            style={styles.pickerList}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <Pressable
@@ -272,18 +324,22 @@ export function TimeEntrySheet({
         </View>
       ) : (
         <View style={styles.body}>
-          <Banner
-            tone={mismatch || !timezone ? 'warning' : 'info'}
-            testID="tz-banner"
-            message={
-              timezone
-                ? mismatch
+          {/* A banner only when there is something to warn about; otherwise a quiet helper line. */}
+          {mismatch || !timezone ? (
+            <Banner
+              tone="warning"
+              testID="tz-banner"
+              message={
+                timezone
                   ? `Times are in company time (${timezone}), which differs from your device's timezone. Enter company time.`
-                  : `Times are in company time (${timezone}).`
-                : "The company timezone is not known yet, so your device's timezone is used."
-            }
-          />
-          {error ? <Banner message={error} testID="entry-error" /> : null}
+                  : "The company timezone is not known yet, so your device's timezone is used."
+              }
+            />
+          ) : (
+            <Text size="xs" tone="muted" testID="tz-banner">
+              {`Times are in company time (${timezone}).`}
+            </Text>
+          )}
 
           <View style={styles.field}>
             <Text size="sm" weight="medium" tone="muted">
@@ -294,23 +350,82 @@ export function TimeEntrySheet({
               onPress={() => setPicking(true)}
               accessibilityRole="button"
               accessibilityLabel={task ? `Task: ${task.label}${editing ? '' : '. Change task'}` : 'Choose a task'}
-              style={[styles.select, { minHeight: t.minTouch, borderColor: t.colors.lineStrong, borderRadius: t.radius.xl, backgroundColor: editing ? t.colors.subtle : t.colors.surface }]}
+              style={[styles.select, { minHeight: t.minTouch, borderColor: t.colors.fieldBorder, borderRadius: t.radius.xl, backgroundColor: editing ? t.colors.subtle : t.colors.surface }]}
             >
-              <Text style={styles.flex1} numberOfLines={2}>
+              <Text style={[styles.flex1, !task && { color: t.colors.placeholder }]} numberOfLines={2}>
                 {task?.label ?? 'Choose a task'}
               </Text>
+              {editing ? null : <Icon name="chevron-down" size={20} tone="subtle" />}
             </Pressable>
           </View>
 
-          <Input label="Date (yyyy-MM-dd)" value={date} onChangeText={setDate} editable={!crossesMidnight} autoCapitalize="none" autoCorrect={false} keyboardType="numbers-and-punctuation" />
-          <View style={styles.times}>
-            <View style={styles.flex1}>
-              <Input label="Start (HH:mm)" value={start} onChangeText={setStart} editable={!crossesMidnight} autoCapitalize="none" autoCorrect={false} keyboardType="numbers-and-punctuation" placeholder="09:30" />
-            </View>
-            <View style={styles.flex1}>
-              <Input label="End (HH:mm)" value={end} onChangeText={setEnd} editable={!crossesMidnight} autoCapitalize="none" autoCorrect={false} keyboardType="numbers-and-punctuation" placeholder="11:00" />
+          <View style={styles.field}>
+            <Input
+              label="Date (yyyy-MM-dd)"
+              value={date}
+              onChangeText={(v) => setDate(maskDate(v))}
+              editable={!crossesMidnight}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="number-pad"
+              maxLength={10}
+              placeholder="2026-10-10"
+              helper="Type the digits only; the dashes are added for you."
+            />
+            <View style={styles.presetRow}>
+              <Text size="sm" tone="muted" testID="date-weekday" style={styles.flex1}>
+                {isValidDateString(date) ? formatDateLabel(date) : 'Not a valid date yet'}
+              </Text>
+              {todayDate && !crossesMidnight ? (
+                <>
+                  <Button label="Today" variant="secondary" size="compact" fullWidth={false} inline onPress={() => setDate(todayDate)} />
+                  <Button
+                    label="Yesterday"
+                    variant="secondary"
+                    size="compact"
+                    fullWidth={false}
+                    inline
+                    onPress={() => setDate(addDaysToDateString(todayDate, -1))}
+                  />
+                </>
+              ) : null}
             </View>
           </View>
+          <View style={styles.times}>
+            <View style={styles.flex1}>
+              <Input
+                label="Start (HH:mm)"
+                value={start}
+                onChangeText={(v) => setStart(maskTime(v))}
+                editable={!crossesMidnight}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="number-pad"
+                maxLength={5}
+                placeholder="09:30"
+              />
+              {!crossesMidnight ? <NudgeRow value={start} onChange={setStart} what="start time" /> : null}
+            </View>
+            <View style={styles.flex1}>
+              <Input
+                label="End (HH:mm)"
+                value={end}
+                onChangeText={(v) => setEnd(maskTime(v))}
+                editable={!crossesMidnight}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="number-pad"
+                maxLength={5}
+                placeholder="11:00"
+              />
+              {!crossesMidnight ? <NudgeRow value={end} onChange={setEnd} what="end time" /> : null}
+            </View>
+          </View>
+          {!crossesMidnight ? (
+            <Text size="xs" tone="muted">
+              Type 4 digits for a time, e.g. 0930.
+            </Text>
+          ) : null}
           {crossesMidnight ? (
             <Text size="xs" tone="muted" testID="overnight-hint">
               This entry runs past midnight (or is still open), so its times cannot be changed here. You can still edit the note or confirm it.
@@ -327,7 +442,7 @@ export function TimeEntrySheet({
               {preview.longEntryHint ? ' · The server may reject a single entry this long.' : ''}
             </Text>
           ) : null}
-          <Input label="Note (optional)" value={note} onChangeText={setNote} multiline maxLength={NOTE_MAX} />
+          <Input label="Note (optional)" value={note} onChangeText={setNote} multiline numberOfLinesMin={2} maxLength={NOTE_MAX} counter />
           {needsConfirm ? (
             <>
               <Text size="xs" tone="muted">
@@ -336,9 +451,6 @@ export function TimeEntrySheet({
               <Button label="Confirm entry as correct" variant="secondary" onPress={() => void doConfirm()} loading={confirm.isPending} disabled={busy} />
             </>
           ) : null}
-
-          <Button label={editing ? 'Save entry' : 'Add entry'} onPress={() => void submit()} loading={create.isPending || update.isPending} disabled={busy} />
-          {editing ? <Button label="Delete entry" variant="danger" onPress={confirmDelete} loading={remove.isPending} disabled={busy} /> : null}
         </View>
       )}
     </BottomSheet>
@@ -347,10 +459,15 @@ export function TimeEntrySheet({
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  body: { padding: 16, gap: 10 },
-  field: { gap: 6 },
+  body: { padding: 16, gap: 12 },
+  // The picker shrinks with the sheet (and the keyboard) instead of a fixed 320dp list.
+  pickerBody: { flexShrink: 1 },
+  pickerList: { flexShrink: 1 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  field: { gap: 8 },
   select: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, paddingHorizontal: 12 },
-  times: { flexDirection: 'row', gap: 10 },
-  chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  taskRow: { justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 6 },
+  times: { flexDirection: 'row', gap: 8 },
+  presetRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  nudge: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  taskRow: { justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
 });

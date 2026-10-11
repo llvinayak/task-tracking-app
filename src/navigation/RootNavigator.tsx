@@ -6,16 +6,23 @@ import { SessionRestoreErrorScreen, SplashScreen } from '@/screens/StatusScreens
 import { useAuthStore } from '@/store/authStore';
 
 import { AppTabs } from './AppTabs';
-import { ModuleRoute, ProfileRoute } from './ModuleHost';
+import { ModuleRoute, ProfileRoute, withPushHeader } from './ModuleHost';
 import { QATaskScreen } from '@/features/qa/QATaskScreen';
 import { SprintDetailScreen } from '@/features/sprints/SprintDetailScreen';
 import { TicketCreateScreen } from '@/features/tickets/TicketCreateScreen';
 import { TicketDetailScreen } from '@/features/tickets/TicketDetailScreen';
 import { TimesheetScreen } from '@/features/timesheet/TimesheetScreen';
 import { TaskDetailScreen } from '@/features/tasks/TaskDetailScreen';
-import { useTheme } from '@/theme/ThemeProvider';
 
 import type { AuthStackParamList, RootStackParamList } from './types';
+
+// Native headers are hidden on pushed screens: each renders the single PageHeader (back + context title + strips).
+const QATaskScreenPush = withPushHeader(QATaskScreen, 'QA');
+const TaskDetailScreenPush = withPushHeader(TaskDetailScreen, 'Task');
+const TicketDetailScreenPush = withPushHeader(TicketDetailScreen, 'Ticket');
+const TicketCreateScreenPush = withPushHeader(TicketCreateScreen, 'New ticket');
+const SprintDetailScreenPush = withPushHeader(SprintDetailScreen, 'Sprint');
+const TimesheetScreenPush = withPushHeader(TimesheetScreen, 'Timesheet');
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -26,15 +33,6 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
  */
 export function RootNavigator() {
   const status = useAuthStore((s) => s.status);
-  const t = useTheme();
-  const header = {
-    headerShown: true,
-    headerBackTitle: 'Back',
-    headerStyle: { backgroundColor: t.colors.surface },
-    headerTintColor: t.colors.brand[600],
-    headerTitleStyle: { color: t.colors.fg },
-  } as const;
-
   if (status === 'loading') return <SplashScreen />;
   if (status === 'error') return <SessionRestoreErrorScreen />;
 
@@ -42,14 +40,14 @@ export function RootNavigator() {
     return (
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         <RootStack.Screen name="Main" component={AppTabs} />
-        <RootStack.Screen name="Module" component={ModuleRoute} options={{ headerShown: false }} />
-        <RootStack.Screen name="Profile" component={ProfileRoute} options={{ headerShown: false }} />
-        <RootStack.Screen name="QATask" component={QATaskScreen} options={{ ...header, title: 'QA' }} />
-        <RootStack.Screen name="TaskDetail" component={TaskDetailScreen} options={{ ...header, title: 'Task' }} />
-        <RootStack.Screen name="TicketDetail" component={TicketDetailScreen} options={{ ...header, title: 'Ticket' }} />
-        <RootStack.Screen name="TicketCreate" component={TicketCreateScreen} options={{ ...header, title: 'New ticket' }} />
-        <RootStack.Screen name="SprintDetail" component={SprintDetailScreen} options={{ ...header, title: 'Sprint' }} />
-        <RootStack.Screen name="Timesheet" component={TimesheetScreen} options={{ ...header, title: 'Timesheet' }} />
+        <RootStack.Screen name="Module" component={ModuleRoute} />
+        <RootStack.Screen name="Profile" component={ProfileRoute} />
+        <RootStack.Screen name="QATask" component={QATaskScreenPush} />
+        <RootStack.Screen name="TaskDetail" component={TaskDetailScreenPush} />
+        <RootStack.Screen name="TicketDetail" component={TicketDetailScreenPush} />
+        <RootStack.Screen name="TicketCreate" component={TicketCreateScreenPush} />
+        <RootStack.Screen name="SprintDetail" component={SprintDetailScreenPush} />
+        <RootStack.Screen name="Timesheet" component={TimesheetScreenPush} />
       </RootStack.Navigator>
     );
   }

@@ -2,12 +2,12 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { UseQueryResult } from '@tanstack/react-query';
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
 import type { Task } from '@/api/models';
 import { QA_QUEUE_STATUSES, type QAQueueStatus } from '@/api/qaApi';
-import { Badge, Button, Card, Chip, EmptyState, ErrorState, LoadingState, Screen, StaleBanner, Text } from '@/components/ui';
+import { Button, Chip, EmptyState, EntityCard, ErrorState, FlagLine, Icon, ModuleHeader, Screen, SkeletonCards, StaleBanner, Text } from '@/components/ui';
 import { useTaskConfig } from '@/hooks/queries';
 import { useOverdueToQA, useQAQueue } from '@/hooks/qa';
 import { useChangeStatus } from '@/hooks/taskMutations';
@@ -31,58 +31,72 @@ function QARow({ task, view, onOpen }: { task: Task; view: View_; onOpen: (t: Ta
   const overdueDays = view === 'OVERDUE' ? daysFromToday(task.release_to_qa_date) : null;
   const sprint = [task.sprint?.name, task.releaseSprint?.name].filter(Boolean).join(' · ');
 
+  const overdue = overdueDays !== null && overdueDays < 0;
   return (
-    <Card padded={false} style={styles.row} testID={`qa-row-${task.id}`}>
-      <Pressable
-        onPress={() => onOpen(task)}
-        accessibilityRole="button"
-        accessibilityLabel={`${task.title}. ${statusLabel(config, task.status)}. QA: ${task.qaOwner?.name ?? 'Unassigned'}${
-          task.reopen_count > 0 ? `. Reopened ${task.reopen_count} times` : ''
-        }`}
-        style={[styles.press, { minHeight: t.minTouch }]}
-      >
-        <Text weight="semibold" size="lg" numberOfLines={2}>
-          {task.title}
-        </Text>
-        <View style={styles.tags}>
-          <StatusChip status={task.status} config={config} />
-          <Text size="xs" tone="muted">
-            QA: {task.qaOwner?.name ?? 'Unassigned'}
-          </Text>
-          {task.reopen_count > 0 ? <Badge label={`Reopened ${task.reopen_count}×`} tone="warning" /> : null}
-          {overdueDays !== null && overdueDays < 0 ? <Badge label={`${Math.abs(overdueDays)}d overdue to QA`} tone="danger" /> : null}
+    <EntityCard
+      testID={`qa-row-${task.id}`}
+      accent={overdue ? 'danger' : task.reopen_count > 0 ? 'warning' : 'brand'}
+      title={task.title}
+      onPress={() => onOpen(task)}
+      accessibilityLabel={`${task.title}. ${statusLabel(config, task.status)}. QA: ${task.qaOwner?.name ?? 'Unassigned'}${
+        task.reopen_count > 0 ? `. Reopened ${task.reopen_count}x` : ''
+      }`}
+      header={overdue ? <FlagLine label={`${Math.abs(overdueDays)}d overdue to QA`} tone="danger" /> : undefined}
+      meta={
+        <View style={styles.metaStack}>
+          <View style={styles.tags}>
+            <StatusChip status={task.status} config={config} />
+            <Text size="xs" tone="muted">
+              QA: {task.qaOwner?.name ?? 'Unassigned'}
+            </Text>
+            {task.reopen_count > 0 ? (
+              <View style={styles.tags}>
+                <Icon name="refresh" size={12} tone="warning" />
+                <Text size="xs" weight="semibold" tone="warning">
+                  Reopened {task.reopen_count}x
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          {sprint ? (
+            <Text size="xs" tone="subtle" numberOfLines={1}>
+              {sprint}
+            </Text>
+          ) : null}
+          {parentOnly ? (
+            <Text size="sm" tone="muted">
+              Parent task is not ready itself · {task.ready_subtasks.length}{' '}
+              {task.ready_subtasks.length === 1 ? 'subtask' : 'subtasks'} ready for QA
+            </Text>
+          ) : null}
         </View>
-        {sprint ? (
-          <Text size="xs" tone="subtle" numberOfLines={1}>
-            {sprint}
-          </Text>
-        ) : null}
-        {parentOnly ? (
-          <Text size="sm" tone="muted">
-            Parent task is not ready itself · {task.ready_subtasks.length}{' '}
-            {task.ready_subtasks.length === 1 ? 'subtask' : 'subtasks'} ready for QA
-          </Text>
-        ) : null}
-      </Pressable>
+      }
+      footer={
+        task.ready_subtasks.length > 0 ? (
+          <View>
+            {task.ready_subtasks.map((s) => {
 
-      {task.ready_subtasks.map((s) => {
-        const allowed = new Set(allowedTargets(config, s.status).map((x) => x.key));
-        return (
-        <View key={s.id} style={[styles.sub, { borderTopColor: t.colors.lineFaint }]} testID={`qa-sub-${s.id}`}>
+              const allowed = new Set(allowedTargets(config, s.status).map((x) => x.key));
+              return (
+        <View key={s.id} style={[styles.sub, { borderTopColor: t.colors.line }]} testID={`qa-sub-${s.id}`}>
           <Text style={styles.flex1} numberOfLines={2}>
             {s.title}
           </Text>
           <View style={styles.tags}>
             <Button
-              label={`Pass ${s.title}`}
+              label="Pass"
+              accessibilityLabel={`Pass ${s.title}`}
               variant="secondary"
+              size="compact"
               fullWidth={false}
               disabled={change.isPending || !allowed.has('PASS')}
               onPress={() => change.mutate({ taskId: s.id, status: 'PASS', successMessage: `Moved to ${statusLabel(config, 'PASS')}` })}
             />
             <Button
-              label={`Fail ${s.title}`}
-              variant="danger"
+              label="Fail"
+              accessibilityLabel={`Fail ${s.title}`}
+              variant="dangerOutline"
+              size="compact"
               fullWidth={false}
               disabled={change.isPending || !allowed.has('FAIL')}
               onPress={() => change.mutate({ taskId: s.id, status: 'FAIL', successMessage: `Moved to ${statusLabel(config, 'FAIL')}` })}
@@ -90,18 +104,25 @@ function QARow({ task, view, onOpen }: { task: Task; view: View_; onOpen: (t: Ta
           </View>
           {!allowed.has('PASS') || !allowed.has('FAIL') ? (
             <Text size="2xs" tone="muted">
-              Not every verdict is allowed from {statusLabel(config, s.status)} in this workflow.
+              {!allowed.has('PASS') && !allowed.has('FAIL')
+                ? `Pass and Fail can't be recorded while this subtask is ${statusLabel(config, s.status)}.`
+                : !allowed.has('PASS')
+                  ? `Pass can't be recorded while this subtask is ${statusLabel(config, s.status)}.`
+                  : `Fail can't be recorded while this subtask is ${statusLabel(config, s.status)}.`}
             </Text>
           ) : null}
         </View>
-        );
-      })}
-    </Card>
+              );
+            })}
+          </View>
+        ) : undefined
+      }
+    />
   );
 }
 
 function List({ query, view, onOpen }: { query: UseQueryResult<Task[]>; view: View_; onOpen: (t: Task) => void }) {
-  if (query.isLoading) return <LoadingState label="Loading..." />;
+  if (query.isLoading) return <SkeletonCards label="Loading..." variant="task" count={4} />;
   if (query.isError && !query.data) {
     return <ErrorState message={getErrorMessage(query.error)} onRetry={() => void query.refetch()} />;
   }
@@ -109,7 +130,7 @@ function List({ query, view, onOpen }: { query: UseQueryResult<Task[]>; view: Vi
     <View style={styles.list}>
       {query.isError ? <StaleBanner message={getErrorMessage(query.error)} /> : null}
       {(query.data ?? []).length === 0 ? (
-        <EmptyState title={view === 'OVERDUE' ? 'Nothing is overdue to QA' : 'Nothing here'} />
+        <EmptyState icon="checkmark-circle-outline" title={view === 'OVERDUE' ? 'Nothing is overdue to QA' : 'Nothing here'} />
       ) : (
         (query.data ?? []).map((task) => <QARow key={task.id} task={task} view={view} onOpen={onOpen} />)
       )}
@@ -146,15 +167,12 @@ export function QAScreen() {
   const overdueCount = overdue.data?.length ?? 0;
 
   return (
-    <Screen scroll edges={['top', 'left', 'right']} onRefresh={refresh} refreshing={refreshing}>
-      <Text size="2xl" weight="bold" accessibilityRole="header">
-        QA
-      </Text>
+    <Screen scroll edges={['left', 'right']} header={<ModuleHeader title="QA" />} onRefresh={refresh} refreshing={refreshing}>
       <Text tone="muted" testID="qa-awaiting" style={styles.sub0}>
         {awaiting} {awaiting === 1 ? 'task' : 'tasks'} awaiting QA
       </Text>
 
-      <View style={styles.chips}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips} style={styles.chipScroll}>
         {QA_QUEUE_STATUSES.map((s) => (
           <Chip
             key={s}
@@ -172,7 +190,7 @@ export function QAScreen() {
           selected={view === 'OVERDUE'}
           onPress={() => setView('OVERDUE')}
         />
-      </View>
+      </ScrollView>
 
       <List query={view === 'OVERDUE' ? overdue : queries[view]} view={view} onOpen={open} />
     </Screen>
@@ -182,10 +200,10 @@ export function QAScreen() {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   sub0: { marginBottom: 8 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  list: { gap: 10 },
-  row: { overflow: 'hidden' },
-  press: { padding: 12, gap: 6 },
+  chipScroll: { flexGrow: 0, marginBottom: 8 },
+  chips: { flexDirection: 'row', gap: 8, paddingRight: 16 },
+  list: { gap: 8 },
+  metaStack: { gap: 8 },
   tags: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   sub: { padding: 12, gap: 8, borderTopWidth: StyleSheet.hairlineWidth },
 });

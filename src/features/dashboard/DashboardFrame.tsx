@@ -4,8 +4,9 @@ import React from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
-import { Banner, ErrorState, LoadingState } from '@/components/ui';
+import { Banner, ErrorState, SkeletonSections } from '@/components/ui';
 import { DASHBOARD_POLL_MS } from '@/config/dashboardRoles';
+import { useScreenBottomPadding } from '@/hooks/useScreenBottomPadding';
 import { useTheme } from '@/theme/ThemeProvider';
 
 /**
@@ -30,14 +31,15 @@ export function DashboardFrame<T>({
   children: (data: T) => React.ReactNode;
 }) {
   const t = useTheme();
-  if (query.isLoading) return <LoadingState label="Loading dashboard..." />;
+  const bottom = useScreenBottomPadding(32);
+  if (query.isLoading) return <View style={styles.content}><SkeletonSections label="Loading dashboard..." /></View>;
   if (query.isError && query.data === undefined) {
     return <ErrorState message={getErrorMessage(query.error)} onRetry={() => void query.refetch()} />;
   }
-  if (query.data === undefined) return <LoadingState label="Loading dashboard..." />;
+  if (query.data === undefined) return <View style={styles.content}><SkeletonSections label="Loading dashboard..." /></View>;
   return (
     <ScrollView
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
       refreshControl={
         <RefreshControl
           refreshing={query.isRefetching}

@@ -1,13 +1,19 @@
 import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, BackHandler, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, BackHandler, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 
 import { getDailyReport, type DailyReport, type DayItem } from '@/api/dailyReportApi';
 import { getErrorMessage } from '@/api/errors';
+import { DAY_TARGET_MINUTES } from '@/config/constants';
+import { hapticNotify } from '@/lib/haptics';
+import { useMenuAccess } from '@/hooks/useMenuAccess';
+import { useOpenModule } from '@/navigation/useOpenModule';
 import {
   Badge,
   Banner,
+  Icon,
+  ProgressBar,
   Button,
   Card,
   Dot,
@@ -15,9 +21,11 @@ import {
   ErrorState,
   Input,
   LoadingState,
+  ModuleHeader,
   Screen,
   StaleBanner,
   Text,
+  useFontFace,
   useToast,
 } from '@/components/ui';
 import {
@@ -75,6 +83,7 @@ function MinutesEditor({
   onError: (id: string, message: string | null) => void;
 }) {
   const t = useTheme();
+  const face = useFontFace('regular');
   const parts = partsFromMinutes(minutes);
   const [h, setH] = useState(String(parts.hours));
   const [m, setM] = useState(String(parts.minutes));
@@ -127,10 +136,12 @@ function MinutesEditor({
           {
             minHeight: t.minTouch,
             minWidth: t.minTouch + 8,
-            color: t.colors.fg,
-            borderColor: error ? t.colors.danger.base : t.colors.lineStrong,
+            color: disabled ? t.colors.fgMuted : t.colors.fg,
+            borderColor: error ? t.colors.danger.base : disabled ? t.colors.line : t.colors.fieldBorder,
             backgroundColor: disabled ? t.colors.subtle : t.colors.surface,
             borderRadius: t.radius.xl,
+            fontSize: t.typography.lg.fontSize,
+            ...face,
           },
         ]}
       />
@@ -155,10 +166,25 @@ function MinutesEditor({
   );
 }
 
+/** Empty day: points to Tasks (navigation only) when the user may open it. Hooks live here, not in the screen. */
+function EmptyDay() {
+  const { canView } = useMenuAccess();
+  const openModule = useOpenModule();
+  return (
+    <EmptyState
+      icon="timer-outline"
+      title="Nothing tracked yet"
+      message="Start a timer on a task and it will show up here."
+      {...(canView('/tasks') ? { action: { label: 'Go to Tasks', onPress: () => void openModule('Tasks') } } : {})}
+    />
+  );
+}
+
 /* ── Screen ──────────────────────────────────────────────────────────────── */
 
 export function MyDayScreen() {
-  const t = useTheme();
+  // Live font scale (re-renders when the user changes it); PixelRatio.getFontScale() is a snapshot.
+  const { fontScale } = useWindowDimensions();
   const toast = useToast();
   const qc = useQueryClient();
   const navigation = useNavigation();
@@ -443,7 +469,10 @@ export function MyDayScreen() {
       await save.mutateAsync(toSaveBody(fresh, merged));
       if (!alive()) return; // signed out meanwhile: no settle, no toast
       settle(date, fresh, merged);
-      if (viewRef.current?.date === date) toast.show('Draft saved', 'success');
+      if (viewRef.current?.date === date) {
+        toast.show('Draft saved', 'success');
+        hapticNotify('success');
+      }
     });
 
   const doSubmit = () =>
@@ -453,6 +482,7 @@ export function MyDayScreen() {
       if (!alive()) return;
       settle(date, fresh, merged);
       toast.show(res.message, 'success');
+      hapticNotify('success');
     });
 
   const onSubmit = () => {
@@ -473,7 +503,7 @@ export function MyDayScreen() {
   if (!view || !form) {
     if (day.isError) {
       return (
-        <Screen edges={['top', 'left', 'right']}>
+        <Screen edges={['left', 'right']} header={<ModuleHeader title="My Day" />}>
           <ErrorState
             message={getErrorMessage(day.error)}
             onRetry={() => void day.refetch()}
@@ -483,44 +513,90 @@ export function MyDayScreen() {
       );
     }
     return (
-      <Screen edges={['top', 'left', 'right']}>
+      <Screen edges={['left', 'right']} header={<ModuleHeader title="My Day" />}>
         <LoadingState label="Loading your day..." />
       </Screen>
     );
   }
 
+  const timesheetLink = (
+    <Button
+      label="Timesheet"
+      icon="calendar-outline"
+      variant="secondary"
+      size="compact"
+      fullWidth={false}
+      onPress={() => (navigation as unknown as { navigate: (n: string) => void }).navigate('Timesheet')}
+    />
+  );
   const noItems = view.items.length === 0;
+  // Sticky Save/Submit (hidden while the keyboard is open and when the day is locked). At large text the
+  // two buttons stack, Submit on top.
+  const stacked = fontScale >= 1.3;
+  // Reading order == visual order: stacked, Submit is both on top AND first (no column-reverse).
+  const saveButton = (
+    <Button
+      key="save"
+      label="Save draft"
+      variant="secondary"
+      style={stacked ? undefined : styles.flex1}
+      onPress={() => void onSave()}
+      loading={save.isPending}
+      disabled={!dirty || submit.isPending || hasEditorErrors}
+    />
+  );
+  const submitButton = (
+    <Button
+      key="submit"
+      label="Submit day"
+      style={stacked ? undefined : styles.flex1}
+      onPress={onSubmit}
+      loading={submit.isPending}
+      disabled={save.isPending || hasEditorErrors}
+    />
+  );
+  const footer = locked ? undefined : (
+    <View style={stacked ? styles.footerStack : styles.footerRow}>{stacked ? [submitButton, saveButton] : [saveButton, submitButton]}</View>
+  );
+
   const showRolled = rolledDraftDate !== null && knownToday !== null && view.date !== knownToday;
 
   return (
-    <Screen scroll keyboardAvoiding edges={['top', 'left', 'right']} onRefresh={() => void day.refetch()} refreshing={day.isRefetching}>
+    <Screen
+      scroll
+      keyboardAvoiding
+      edges={['left', 'right']}
+      header={<ModuleHeader title="My Day" trailing={timesheetLink} />}
+      footer={footer}
+      onRefresh={() => void day.refetch()} refreshing={day.isRefetching}>
       {day.isError ? <StaleBanner message={getErrorMessage(day.error)} /> : null}
 
       <View style={styles.header}>
-        <Text size="2xl" weight="bold" accessibilityRole="header">
-          My Day
-        </Text>
-        <View style={styles.row}>
-          <Text weight="semibold" testID="day-date">
-            {formatDateLabel(view.date)}
-          </Text>
-          <Badge label={locked ? 'Submitted' : 'Draft'} tone={locked ? 'success' : 'neutral'} />
+        <View style={styles.stepper}>
+          <Button label="Previous day" accessibilityLabel="Previous day" iconOnly icon="chevron-back" variant="secondary" inline disabled={busy} onPress={prev} />
+          <View style={styles.dateWrap}>
+            <Text weight="semibold" testID="day-date" style={styles.dateText}>
+              {formatDateLabel(view.date)}
+            </Text>
+            <Badge label={locked ? 'Submitted' : 'Draft'} tone={locked ? 'success' : 'neutral'} icon={locked ? 'checkmark-circle' : 'create-outline'} />
+          </View>
+          <Button label="Next day" accessibilityLabel="Next day" iconOnly icon="chevron-forward" variant="secondary" inline disabled={onToday || busy} onPress={next} />
         </View>
-        <View style={styles.nav}>
-          <Button label="Previous day" variant="secondary" fullWidth={false} disabled={busy} onPress={prev} />
-          <Button label="Next day" variant="secondary" fullWidth={false} disabled={onToday || busy} onPress={next} />
-          <Button label="Today" variant="secondary" fullWidth={false} disabled={onToday || busy} onPress={toToday} />
-          <Button
-            label="Timesheet"
-            variant="ghost"
-            fullWidth={false}
-            onPress={() => (navigation as unknown as { navigate: (n: string) => void }).navigate('Timesheet')}
-          />
-        </View>
+        <Button label="Today" variant="ghost" size="compact" fullWidth={false} disabled={onToday || busy} onPress={toToday} />
+        {/* The 8h target is a display-only constant (the server does not enforce it). */}
         <Text size="sm" tone="muted" testID="day-totals">
-          Total {formatDuration(total)}
+          Total {formatDuration(total)} of {formatDuration(DAY_TARGET_MINUTES)}
           {view.trackedMinutes !== total ? ` · tracked ${formatDuration(view.trackedMinutes)}` : ''}
         </Text>
+        <ProgressBar pct={(total / DAY_TARGET_MINUTES) * 100} label="Progress to the 8h day" height={8} />
+        {total >= DAY_TARGET_MINUTES ? (
+          <View style={styles.row}>
+            <Icon name="checkmark-circle" size={16} tone="success" />
+            <Text size="xs" weight="semibold" tone="success">
+              8h target met
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {showRolled ? (
@@ -582,8 +658,10 @@ export function MyDayScreen() {
                 </Text>
               </View>
               <Button
-                label={`Confirm ${e.task_title}`}
+                label="Confirm"
+                accessibilityLabel={`Confirm ${e.task_title}`}
                 fullWidth={false}
+                size="compact"
                 variant="secondary"
                 loading={review.isPending && review.variables === e.id}
                 onPress={() => review.mutate(e.id, { onError: (err) => setActionError(getErrorMessage(err)) })}
@@ -594,7 +672,7 @@ export function MyDayScreen() {
       ) : null}
 
       {noItems ? (
-        <EmptyState title="Nothing tracked yet" message="Start a timer on a task and it will show up here." />
+        <EmptyDay />
       ) : (
         groups.map((g) => (
           <View key={g.key} style={styles.group} testID={`project-group-${g.key}`}>
@@ -649,7 +727,9 @@ export function MyDayScreen() {
                         value={fi?.note ?? ''}
                         editable={!locked && !busy}
                         maxLength={MAX_NOTE}
+                        counter
                         multiline
+                        numberOfLinesMin={2}
                         onChangeText={(v) => setItem(i.key, { note: v })}
                       />
                     </>
@@ -662,23 +742,11 @@ export function MyDayScreen() {
       )}
 
       <View style={styles.texts}>
-        <Input label="Summary" value={form.summary} editable={!locked && !busy} maxLength={MAX_TEXT} multiline onChangeText={(v) => setField({ summary: v })} />
-        <Input label="Blockers" value={form.blockers} editable={!locked && !busy} maxLength={MAX_TEXT} multiline onChangeText={(v) => setField({ blockers: v })} />
-        <Input label="Tomorrow's plan" value={form.tomorrow_plan} editable={!locked && !busy} maxLength={MAX_TEXT} multiline onChangeText={(v) => setField({ tomorrow_plan: v })} />
+        <Input label="Summary" optional counter value={form.summary} editable={!locked && !busy} maxLength={MAX_TEXT} multiline onChangeText={(v) => setField({ summary: v })} />
+        <Input label="Blockers" optional counter value={form.blockers} editable={!locked && !busy} maxLength={MAX_TEXT} multiline onChangeText={(v) => setField({ blockers: v })} />
+        <Input label="Tomorrow's plan" optional counter value={form.tomorrow_plan} editable={!locked && !busy} maxLength={MAX_TEXT} multiline onChangeText={(v) => setField({ tomorrow_plan: v })} />
       </View>
 
-      {!locked ? (
-        <View style={[styles.actions, { borderTopColor: t.colors.line }]}>
-          <Button
-            label="Save draft"
-            variant="secondary"
-            onPress={() => void onSave()}
-            loading={save.isPending}
-            disabled={!dirty || submit.isPending || hasEditorErrors}
-          />
-          <Button label="Submit day" onPress={onSubmit} loading={submit.isPending} disabled={save.isPending || hasEditorErrors} />
-        </View>
-      ) : null}
     </Screen>
   );
 }
@@ -686,15 +754,18 @@ export function MyDayScreen() {
 const styles = StyleSheet.create({
   header: { gap: 8, marginBottom: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  nav: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   flex1: { flex: 1 },
   gap: { marginBottom: 8 },
-  card: { gap: 8, marginBottom: 10 },
+  card: { gap: 8, marginBottom: 8 },
   group: { marginTop: 12, gap: 8 },
   texts: { gap: 12, marginTop: 16 },
-  actions: { gap: 10, marginTop: 20, paddingTop: 16, borderTopWidth: 1, paddingBottom: 24 },
+  footerRow: { flexDirection: 'row', gap: 8 },
+  footerStack: { flexDirection: 'column', gap: 8 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dateWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 8 },
+  dateText: { textAlign: 'center' },
   reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   numRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   numWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  num: { borderWidth: 1, textAlign: 'center', paddingHorizontal: 8, fontSize: 16 },
+  num: { borderWidth: 1, textAlign: 'center', paddingHorizontal: 8 },
 });

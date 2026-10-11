@@ -1,9 +1,9 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Linking } from 'react-native';
+import { Alert, FlatList, Linking } from 'react-native';
 
 import { AppError } from '@/api/errors';
-import { parseProjects } from '@/api/models';
+import { parseProjects, parseStatusConfig } from '@/api/models';
 import * as projectsApi from '@/api/projectsApi';
 import * as ticketsApi from '@/api/ticketsApi';
 import { TicketCreateScreen } from '@/features/tickets/TicketCreateScreen';
@@ -11,8 +11,9 @@ import { TicketDetailScreen } from '@/features/tickets/TicketDetailScreen';
 import { SEARCH_DEBOUNCE_MS, TicketsScreen } from '@/features/tickets/TicketsScreen';
 import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
-import { sessionUser } from '@/test/fixtures';
+import { rawStatuses, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNav = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn() };
 let mockParams: Record<string, unknown> = { ticketId: 12 };
@@ -53,6 +54,7 @@ beforeEach(() => {
   useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser({ id: 7, name: 'Grace Hopper' }) });
   useProjectStore.setState({ selected: null });
   projects.getProjects.mockResolvedValue(parseProjects([{ id: 2, name: 'Alpha', color: '#3366ff' }, { id: 5, name: 'Beta' }]));
+  projects.getTaskStatuses.mockResolvedValue(parseStatusConfig(rawStatuses()));
   api.getTickets.mockResolvedValue([]);
   api.getTicket.mockResolvedValue(detail());
   api.getTicketComments.mockResolvedValue([]);
@@ -230,8 +232,32 @@ describe('Ticket detail', () => {
       api.updateTicket.mockRejectedValue(new AppError({ kind: 'validation', status: 400, message: 'Invalid status' }));
       render();
       await screen.findByText('Login broken');
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
       fireEvent.press(screen.getByTestId('ticket-status-closed'));
+      // Closing confirms first; the rejection only appears once the user agrees.
+      const [title, , buttons] = alertSpy.mock.calls.at(-1) as [string, string, { text: string; onPress?: () => void }[]];
+      expect(title).toBe('Mark this ticket as Closed?');
+      expect(api.updateTicket).not.toHaveBeenCalled();
+      act(() => buttons.find((b) => b.text === 'Mark Closed')!.onPress!());
       expect(await screen.findByText('Invalid status')).toBeTruthy();
+      alertSpy.mockRestore();
+    });
+
+    it('Mark Closed: Cancel changes nothing, and the other statuses do not ask', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+      api.updateTicket.mockResolvedValue(detail({ status: 'in_progress' }));
+      render();
+      await screen.findByText('Login broken');
+      fireEvent.press(screen.getByTestId('ticket-status-closed'));
+      const [, body, buttons] = alertSpy.mock.calls.at(-1) as [string, string, { text: string; style?: string }[]];
+      expect(body).toBe('You can change the status again later.');
+      expect(buttons.map((b) => b.text)).toEqual(['Cancel', 'Mark Closed']);
+      expect(api.updateTicket).not.toHaveBeenCalled();
+      alertSpy.mockClear();
+      fireEvent.press(screen.getByTestId('ticket-status-in_progress'));
+      expect(alertSpy).not.toHaveBeenCalled();
+      await waitFor(() => expect(api.updateTicket).toHaveBeenCalledWith(12, { status: 'in_progress' }));
+      alertSpy.mockRestore();
     });
   });
 
@@ -422,5 +448,57 @@ describe('New ticket', () => {
     render();
     fireEvent.press(screen.getByRole('button', { name: /^Project:/ }));
     expect(await screen.findByText(NETWORK.message)).toBeTruthy();
+  });
+});
+
+describe('Pilot fixes (Tickets)', () => {
+  it('the list stays mounted while loading (chips are there), keeps the keyboard open on tap, and the severity badge says what it is', async () => {
+    api.getTickets.mockImplementation(() => new Promise(() => undefined));
+    renderWithProviders(<TicketsScreen />);
+    expect(screen.getByLabelText('Loading tickets...')).toBeTruthy();
+    expect(screen.getByTestId('ticket-chip-all')).toBeTruthy(); // chips live in the list header: no remount, present during load
+    expect(screen.UNSAFE_getByType(FlatList).props.keyboardShouldPersistTaps).toBe('handled');
+    const search = screen.getByLabelText('Search tickets');
+    expect(search.props.placeholder).toBe('Search tickets');
+  });
+
+  it('cards carry "Severity: High" and a stable separator', async () => {
+    api.getTickets.mockResolvedValue([ticket({ id: 1, title: 'Crash on start', severity: 3, status: 'open' })]);
+    renderWithProviders(<TicketsScreen />);
+    await screen.findByText('Crash on start');
+    expect(screen.getByText('Severity: High')).toBeTruthy();
+    const sep = screen.UNSAFE_getByType(FlatList).props.ItemSeparatorComponent;
+    fireEvent.changeText(screen.getByLabelText('Search tickets'), 'C');
+    expect(screen.UNSAFE_getByType(FlatList).props.ItemSeparatorComponent).toBe(sep);
+  });
+
+  it('New ticket: "Client name (optional)" with a helper line; the project select has a chevron and the field border', async () => {
+    renderWithProviders(<TicketCreateScreen />);
+    expect(screen.getByLabelText('Client name (optional)')).toBeTruthy();
+    expect(screen.getByText('Used only if the project has no client.')).toBeTruthy();
+    expect(screen.queryByLabelText(/used only if the project has no client\)/)).toBeNull();
+  });
+});
+
+
+describe('Label in Name on the Tickets screens', () => {
+  it('list, detail (status buttons, assignee sheet) and the create form', async () => {
+    api.getTickets.mockResolvedValue([ticket({ id: 1, title: 'Crash on start', severity: 4, status: 'open' })]);
+    const list = renderWithProviders(<TicketsScreen />);
+    await screen.findByText('Crash on start');
+    expect(labelInNameViolations()).toEqual([]);
+    list.unmount();
+    renderWithProviders(<TicketDetailScreen />);
+    await screen.findByText('Login broken');
+    fireEvent.press(screen.getByRole('button', { name: 'Change assignee' }));
+    await screen.findByRole('radio', { name: 'Linus' });
+    expect(labelInNameViolations()).toEqual([]);
+  });
+
+  it('create form with the project sheet', async () => {
+    renderWithProviders(<TicketCreateScreen />);
+    fireEvent.press(screen.getByRole('button', { name: /^Project:/ }));
+    await screen.findByRole('radio', { name: 'Beta' });
+    expect(labelInNameViolations()).toEqual([]);
   });
 });

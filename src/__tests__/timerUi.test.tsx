@@ -82,7 +82,9 @@ describe('RunningTimerBanner', () => {
 
     const stop = screen.getByRole('button', { name: 'Stop timer on Fix login' });
     const flat = Object.assign({}, ...[stop.props.style].flat(3).filter(Boolean));
-    expect(flat.minHeight).toBeGreaterThanOrEqual(44);
+    // Compact button: 36dp visible + 4dp hitSlop top/bottom = 44dp touch area.
+    const slop = (stop.props.hitSlop ?? {}) as { top?: number; bottom?: number };
+    expect(flat.minHeight + (slop.top ?? 0) + (slop.bottom ?? 0)).toBeGreaterThanOrEqual(44);
     const open = screen.getByRole('button', { name: /Timer running on Fix login, Alpha/ });
     expect(Object.assign({}, ...[open.props.style].flat(3).filter(Boolean)).minHeight).toBeGreaterThanOrEqual(44);
   });

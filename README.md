@@ -52,7 +52,7 @@ or not https in a release build.
 ### Jest and the "worker failed to exit gracefully" message
 
 `jest.config.js` sets `maxWorkers: '50%'`. Findings from measuring it on an 8-logical-core Windows
-machine (876 tests, 46 suites; every run passed all tests):
+machine (1102 tests, 57 suites after the pilot fix round; the figures below were measured earlier at 876 tests, 46 suites; every run passed all tests):
 - With 6 or 8 workers the message "A worker process has failed to exit gracefully" appeared in
   roughly 4 to 6 of 10 full runs. With 4 or 5 workers it did not appear in 25 runs.
 - `--detectOpenHandles` reports no open handles. No single suite is responsible: groups of 8
@@ -106,6 +106,58 @@ Deliberate exceptions, documented in code:
 - QA actions are gated by `canView('/qa')` plus the task's `allowed_transitions`; see the
   backend gaps.
 
+## Design tokens vs web
+
+`src/theme/tokens.ts` mirrors the web tokens, with these intentional MOBILE-ONLY divergences (web is unchanged;
+rationale and computed contrast ratios are in `docs/UX_DESIGN_PLAN.md`, asserted by `src/__tests__/tokensContrast.test.ts`):
+
+- `2xs` type is 12px (web 11px): 12px is the mobile floor. Titles use `xl` where the web uses `2xl`.
+- New tokens with no web twin: `placeholder`, `fieldBorder` (3:1 control border), `fieldBorderFocus`, `divider`,
+  `avatarDev` / `avatarQa`, `indicator` (active tab), `dotWarn` (unfiled day), `motion`, `iconSizes`, `space`, spacing `0.5`.
+- Inter is loaded with `expo-font` (one family per weight on Android); the system font is the fallback if it is not
+  ready after 2.5s. Icons are Ionicons from `@expo/vector-icons` (same `useFonts` call).
+- Dark mode cards use a border instead of a shadow (black shadows are invisible on dark surfaces).
+- Role-aware tab ORDER (`navigation/moduleTabs.ts`) is presentation only: tabs still come from server grants +
+  `is_visible_on_mobile`, 4 modules + More.
+- Animations are core `Animated` only, skipped under Jest and when the OS asks to reduce motion.
+- Ripple overlays (`ripple`, `rippleOnBrand`) are alpha colours so Android ripples never hide the control underneath.
+- Support floor = Expo SDK 54 defaults: Android minSdk 24, iOS 15.1 (RN 0.81 `libs.versions.toml` / `min_ios_version_supported`).
+
+### Pilot round (before the first test APK)
+
+- Android bottom inset: modules pushed from More and Profile now add the bottom safe-area inset to their scrolling content
+  (`useScreenBottomPadding` for lists, `Screen` for scroll views) when no tab bar clears it (edge-to-edge).
+- Keyboard: `useKeyboardOverlap` guards NaN/missing `screenY`, ignores a measure that lands after the keyboard hid, and follows
+  `keyboardWillChangeFrame` on iOS. Time entry: `maskTime` zero-pads when the first digit is 3-9 (`930` becomes `09:30`).
+- Add time: error banner in the sticky footer, Save/Add and Delete on one row, Confirm in the body, note counter, quiet
+  "company time" helper line (banner only on a timezone mismatch), task picker shrinks with the keyboard.
+- Tasks: list and filter chips are always mounted (loading/error/empty live in the list), count line hidden while loading
+  ("Show tasks", never "0 tasks"), one due wording (`3d overdue`, `Due today`, `Due tomorrow`, `Due 13 Oct`), "5h est",
+  "Not in a sprint". Dashboard Developer focus capped at 5 with "Show all N".
+- Android permissions: `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `SYSTEM_ALERT_WINDOW` are blocked in `app.json`
+  (verified in a scratch prebuild: the manifest carries `tools:node="remove"` for them; `VIBRATE` stays for haptics).
+- Label in Name (WCAG 2.5.3) is audited by `src/test/a11y.ts` on whole screens (prefix rule; summarised cards must contain every
+  visible word). Run `DEVICE_SMOKE_TEST.md` section L before sign-off.
+- Chrome budget claim (Tasks, 360x640, nominal arithmetic in `features/tasks/layoutBudget.ts`): about 1.9 cards with no strip
+  (one full card and most of a second) and about 1.6 with the timer strip, using a ~200dp card. It is an estimate, not a
+  measurement: record the real number in DEVICE_SMOKE_TEST L7.
+
+### UI upgrade, what changed (summary)
+
+- One header per screen (`PageHeader`): the six module screens (Dashboard, Tasks, My Day, QA, Tickets, Sprints) render a
+  `ModuleHeader` themselves in EVERY state (loading, error, empty, content), as `tab` in the tab bar or `push` (with Back)
+  when opened from More; detail screens, Timesheet, Profile and More get the header from their host. The header also carries
+  the global offline and running-timer strips.
+- Tasks: one toolbar row (search + Filters sheet with live "Show N tasks"), Mine (default OFF; matches dev/QA/support OWNERS only),
+  grouped list, redesigned `TaskCard` (urgency-aware labelled due date, assignee names as text, Move in the footer).
+- Dashboard: Today's focus / Ready for QA first, compact KPIs, Overdue explainer, quick Start (owner rows only).
+- Detail: Task Detail sticky tab strip (Overview, Time, QA when relevant, Comments, More), verdict-first QA, ticket Closed and
+  QA Reopen confirmations, sprint metric explainers, neutral burndown bars.
+- My Day (style only): sticky Save/Submit footer, icon date stepper, "x of 8h" progress, optional marks and counters.
+- Splash: `assets/splash-placeholder.png` is a TEMPORARY fully transparent placeholder (it only makes the Android splash
+  resource exist); real icon/splash artwork is still to be supplied.
+- Not built / cut: `KeyboardDoneBar` and `NumberField` steppers (P2), toast exit animation, Comments count badge on the tab.
+
 ## Known backend gaps (need a server change; the app works around them)
 
 - No refresh token: a 401 ends the session and the user signs in again.
@@ -128,7 +180,7 @@ Deliberate exceptions, documented in code:
 - Attachment upload (no file or image picker dependency was approved).
 - Releases, calendar, reports, admin screens (users, roles, menus, menu access).
 - Push notifications and token refresh (backend support needed).
-- App icon / splash artwork and the Inter font (system fonts are used).
+- App icon and splash ARTWORK. `assets/splash-placeholder.png` is a TEMPORARY fully transparent placeholder (it only makes the Android splash resource exist); real icon/splash artwork is still to be supplied. `icon` is unset (Expo default); splash background is `#F8FAFC` (dark `#090B12`). Inter is bundled via `@expo-google-fonts/inter`.
 
 ## Not verified
 

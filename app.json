@@ -12,8 +12,35 @@
       "bundleIdentifier": "in.logicloom.tasktracking"
     },
     "android": {
-      "package": "in.logicloom.tasktracking"
+      "package": "in.logicloom.tasktracking",
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
-    "plugins": ["expo-secure-store"]
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F8FAFC",
+          "image": "./assets/splash-placeholder.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#090B12",
+            "image": "./assets/splash-placeholder.png"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7c91bef3-6d6f-4852-9225-441b37320d45"
+      }
+    },
+    "owner": "vinayakshinde0065"
   }
 }

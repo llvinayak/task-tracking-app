@@ -1,12 +1,12 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { getErrorMessage } from '@/api/errors';
 import { sprintStatusLabel, type BurnPoint, type SprintMetrics } from '@/api/sprintsApi';
 import { parseNumericId } from '@/api/ticketsApi';
-import { Badge, Card, Dot, ErrorState, LoadingState, ProgressBar, Screen, StaleBanner, Text } from '@/components/ui';
+import { Badge, Card, Dot, ErrorState, Icon, ListRow, LoadingState, ProgressBar, Screen, SkeletonDetailHeader, StaleBanner, Text } from '@/components/ui';
 import { useTaskConfig } from '@/hooks/queries';
 import { useSprint, useSprintMetrics } from '@/hooks/sprints';
 import type { RootStackParamList } from '@/navigation/types';
@@ -15,9 +15,10 @@ import { formatDay } from '@/utils/dates';
 import { StatusChip } from '../tasks/TaskParts';
 import { SprintDays } from './SprintsScreen';
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+/** `explain` is one plain-language line under the figure (what it counts); it is read as the hint. */
+function Tile({ label, value, sub, explain }: { label: string; value: string; sub?: string; explain?: string }) {
   return (
-    <Card style={styles.tile} accessible accessibilityLabel={`${label}: ${value}${sub ? `. ${sub}` : ''}`}>
+    <Card style={styles.tile} accessible accessibilityLabel={`${label}: ${value}${sub ? `. ${sub}` : ''}`} accessibilityHint={explain}>
       <Text size="xl" weight="bold">
         {value}
       </Text>
@@ -27,6 +28,11 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
       {sub ? (
         <Text size="2xs" tone="subtle">
           {sub}
+        </Text>
+      ) : null}
+      {explain ? (
+        <Text size="2xs" tone="muted">
+          {explain}
         </Text>
       ) : null}
     </Card>
@@ -39,14 +45,16 @@ const hours = (n: number) => `${Math.round(n * 10) / 10}h`;
 export function MetricTiles({ m }: { m: SprintMetrics }) {
   return (
     <View style={styles.tiles} testID="sprint-metrics">
-      <Tile label="Progress" value={`${m.progress.completion_pct}%`} sub={m.progress.commitment_met_pct !== null ? `${m.progress.commitment_met_pct}% of commitment met` : undefined} />
+      <Tile explain="Share of the sprint's tasks that are completed" label="Progress" value={`${m.progress.completion_pct}%`} sub={m.progress.commitment_met_pct !== null ? `${m.progress.commitment_met_pct}% of commitment met` : undefined} />
       <Tile
+        explain="Tasks and hours agreed when the sprint started"
         label="Committed"
         value={m.committed ? `${m.committed.tasks} tasks` : 'n/a'}
         sub={m.committed ? hours(m.committed.estimated_hours) : 'No baseline yet'}
       />
-      <Tile label="Delivered" value={`${m.delivered.tasks} tasks`} sub={hours(m.delivered.estimated_hours)} />
+      <Tile explain="Tasks finished so far" label="Delivered" value={`${m.delivered.tasks} tasks`} sub={hours(m.delivered.estimated_hours)} />
       <Tile
+        explain="Tasks in the sprint now; a change means tasks added or removed after it started"
         label="Scope"
         value={`${m.scope.tasks} tasks`}
         sub={[
@@ -58,11 +66,13 @@ export function MetricTiles({ m }: { m: SprintMetrics }) {
           .join(' · ')}
       />
       <Tile
+        explain="Hours logged against hours estimated; above 1x means more time than estimated"
         label="Effort"
         value={`${hours(m.effort.logged_hours)} logged`}
         sub={`${hours(m.effort.estimated_hours)} estimated${m.effort.ratio !== null ? ` · ${m.effort.ratio}x` : ''}`}
       />
       <Tile
+        explain="Planned working days of the sprint"
         label="Duration"
         value={m.duration.planned_days !== null ? `${m.duration.planned_days} days` : 'n/a'}
         sub={m.duration.actual_days !== null ? `${m.duration.actual_days} days actual` : undefined}
@@ -87,13 +97,28 @@ export function Burndown({ points, ideal }: { points: BurnPoint[]; ideal: Sprint
     <View style={styles.burn} testID="burndown">
       {shown.map((p) => {
         const id = idealByDate.get(p.date);
+        const state = id === undefined ? null : p.remaining_hours <= id ? 'On or under ideal' : 'Above ideal';
         return (
-          <View key={p.date} style={styles.burnRow} accessible accessibilityLabel={`${formatDay(p.date)}: ${hours(p.remaining_hours)} remaining${id !== undefined ? `, ideal ${hours(id)}` : ''}`}>
+          <View key={p.date} style={styles.burnRow} accessible accessibilityLabel={`${formatDay(p.date)}: ${hours(p.remaining_hours)} remaining${id !== undefined ? `, ideal ${hours(id)}` : ''}${state ? `. ${state}` : ''}`}>
             <Text size="2xs" tone="muted" style={styles.burnDate}>
               {formatDay(p.date)}
             </Text>
-            <View style={styles.flex1}>
-              <ProgressBar pct={(p.remaining_hours / max) * 100} label={`${formatDay(p.date)} remaining`} />
+            <View style={styles.burnBar}>
+              {/* Neutral colour: a high "remaining" is not "good"; the tick marks the ideal. */}
+              <ProgressBar
+                semantic="neutral"
+                pct={(p.remaining_hours / max) * 100}
+                {...(id !== undefined ? { markerPct: (id / max) * 100 } : {})}
+                label={`${formatDay(p.date)} remaining`}
+              />
+              {state ? (
+                <View style={styles.burnState}>
+                  <Icon name={state === 'Above ideal' ? 'arrow-up' : 'checkmark'} size={12} tone="muted" />
+                  <Text size="2xs" tone="muted">
+                    {state}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <Text size="2xs" weight="semibold" style={styles.burnNum}>
               {hours(p.remaining_hours)}
@@ -127,7 +152,7 @@ export function SprintDetailScreen() {
   if (sprint.isLoading) {
     return (
       <Screen edges={['left', 'right', 'bottom']}>
-        <LoadingState label="Loading sprint..." />
+        <SkeletonDetailHeader label="Loading sprint..." />
       </Screen>
     );
   }
@@ -153,7 +178,7 @@ export function SprintDetailScreen() {
           <Badge label={sprintStatusLabel(s.status)} tone={s.status === 'active' ? 'success' : s.status === 'completed' ? 'neutral' : 'info'} />
           <SprintDays sprint={s} />
         </View>
-        <Text size="2xl" weight="bold" accessibilityRole="header">
+        <Text size="xl" weight="bold" accessibilityRole="header">
           {s.name}
         </Text>
         <View style={styles.tags}>
@@ -216,34 +241,35 @@ export function SprintDetailScreen() {
           No tasks in this sprint.
         </Text>
       ) : (
-        s.tasks.map((x) => (
-          <Pressable
-            key={x.id}
-            onPress={() => nav.navigate('TaskDetail', { taskId: x.id })}
-            accessibilityRole="button"
-            accessibilityLabel={`${x.title}. ${x.status.replace(/_/g, ' ')}${x.is_blocked ? '. Blocked' : ''}`}
-            style={[styles.taskRow]}
-            testID={`sprint-task-${x.id}`}
-          >
-            <Text weight="medium" numberOfLines={2}>
-              {x.title}
-            </Text>
-            <View style={styles.tags}>
-              <StatusChip status={x.status} config={config} />
-              {x.is_blocked ? <Badge label="Blocked" tone="danger" /> : null}
-              {x.devOwnerName ? (
-                <Text size="2xs" tone="subtle">
-                  Dev: {x.devOwnerName}
-                </Text>
-              ) : null}
-              {x.qaOwnerName ? (
-                <Text size="2xs" tone="subtle">
-                  QA: {x.qaOwnerName}
-                </Text>
-              ) : null}
-            </View>
-          </Pressable>
-        ))
+        <Card padded={false}>
+          {s.tasks.map((x, i) => (
+            <ListRow
+              key={x.id}
+              testID={`sprint-task-${x.id}`}
+              title={x.title}
+              divider={i < s.tasks.length - 1}
+              chevron
+              accessibilityLabel={`${x.title}. ${x.status.replace(/_/g, ' ')}${x.is_blocked ? '. Blocked' : ''}${x.devOwnerName ? `. Dev: ${x.devOwnerName}` : ''}${x.qaOwnerName ? `. QA: ${x.qaOwnerName}` : ''}`}
+              onPress={() => nav.navigate('TaskDetail', { taskId: x.id })}
+              meta={
+                <View style={styles.tags}>
+                  <StatusChip status={x.status} config={config} />
+                  {x.is_blocked ? <Badge label="Blocked" tone="danger" icon="alert-circle" /> : null}
+                  {x.devOwnerName ? (
+                    <Text size="xs" tone="muted">
+                      Dev: {x.devOwnerName}
+                    </Text>
+                  ) : null}
+                  {x.qaOwnerName ? (
+                    <Text size="xs" tone="muted">
+                      QA: {x.qaOwnerName}
+                    </Text>
+                  ) : null}
+                </View>
+              }
+            />
+          ))}
+        </Card>
       )}
       <View style={styles.bottom} />
     </Screen>
@@ -253,16 +279,17 @@ export function SprintDetailScreen() {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   head: { gap: 8, marginBottom: 8 },
-  h: { marginTop: 18, marginBottom: 8 },
-  tags: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  h: { marginTop: 24, marginBottom: 8 },
+  tags: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '45%', gap: 2 },
   burn: { gap: 8 },
   burnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  burnDate: { width: 56 },
-  burnNum: { width: 84, textAlign: 'right' },
-  sub: { gap: 6, marginBottom: 8 },
-  taskRow: { minHeight: 44, paddingVertical: 8, gap: 4 },
+  burnDate: { minWidth: 56, flexShrink: 0 },
+  burnBar: { flex: 1, gap: 4 },
+  burnState: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  burnNum: { flexShrink: 1, textAlign: 'right' },
+  sub: { gap: 8, marginBottom: 8 },
   bottom: { height: 24 },
 });

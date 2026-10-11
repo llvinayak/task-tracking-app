@@ -96,7 +96,7 @@ export function LoginScreen() {
   return (
     <Screen scroll keyboardAvoiding contentStyle={styles.content}>
       <View style={styles.header}>
-        <Text size="3xl" weight="bold">
+        <Text size="3xl" weight="bold" accessibilityRole="header">
           TaskTracking
         </Text>
         <Text tone="muted">Sign in to continue</Text>

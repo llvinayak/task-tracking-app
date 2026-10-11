@@ -1,9 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import type { Task, TaskStatusConfig } from '@/api/models';
-import { BottomSheet, Dot, Text } from '@/components/ui';
-import { useTheme } from '@/theme/ThemeProvider';
+import { BottomSheet, Dot, OptionRow, Text } from '@/components/ui';
 import { allowedTargets, statusLabel } from '@/utils/taskUtils';
 
 /**
@@ -23,17 +22,16 @@ export function StatusSheet({
   onClose: () => void;
   onSelect: (task: Task, status: string) => void;
 }) {
-  const t = useTheme();
   const targets = task ? allowedTargets(config, task.status) : [];
 
   return (
     <BottomSheet visible={!!task} title="Move to" onClose={onClose}>
       {task ? (
         <View style={styles.body}>
-          <Text size="sm" tone="muted" numberOfLines={2}>
+          <Text size="sm" tone="muted" numberOfLines={2} style={styles.pad}>
             {task.title}
           </Text>
-          <Text size="xs" tone="subtle">
+          <Text size="xs" tone="subtle" style={styles.pad}>
             Current: {statusLabel(config, task.status)}
           </Text>
           {targets.length === 0 ? (
@@ -42,26 +40,16 @@ export function StatusSheet({
             </Text>
           ) : (
             targets.map((s) => (
-              <Pressable
+              <OptionRow
                 key={s.key}
+                role="button"
+                label={s.label}
+                accessibilityLabel={`Move to ${s.label}`}
+                leading={<Dot color={s.color} size={10} />}
+                selected={false}
                 disabled={busy}
                 onPress={() => onSelect(task, s.key)}
-                accessibilityRole="button"
-                accessibilityLabel={`Move to ${s.label}`}
-                style={({ pressed }) => [
-                  styles.option,
-                  {
-                    minHeight: t.minTouch,
-                    borderColor: t.colors.line,
-                    borderRadius: t.radius.xl,
-                    backgroundColor: pressed ? t.colors.hover : t.colors.surface,
-                    opacity: busy ? 0.5 : 1,
-                  },
-                ]}
-              >
-                <Dot color={s.color} size={10} />
-                <Text weight="medium">{s.label}</Text>
-              </Pressable>
+              />
             ))
           )}
         </View>
@@ -71,7 +59,7 @@ export function StatusSheet({
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 16, gap: 8 },
-  empty: { paddingVertical: 12 },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, borderWidth: 1 },
+  body: { paddingVertical: 8, gap: 8 },
+  pad: { paddingHorizontal: 16 },
+  empty: { paddingVertical: 12, paddingHorizontal: 16 },
 });

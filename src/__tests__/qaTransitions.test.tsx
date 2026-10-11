@@ -47,8 +47,8 @@ beforeEach(() => {
 describe('M3-14: verdict buttons follow /config allowed_transitions (the seed)', () => {
   it('with the seed, READY_FOR_QA offers Pass and Fail, and FAIL offers Reopen', async () => {
     const a = renderWithProviders(<QAPanel taskId={5} status="READY_FOR_QA" canAct />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Pass' }).props.accessibilityState.disabled).toBe(false));
-    expect(screen.getByRole('button', { name: 'Fail' }).props.accessibilityState.disabled).toBe(false);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pass task' }).props.accessibilityState.disabled).toBe(false));
+    expect(screen.getByRole('button', { name: 'Fail task' }).props.accessibilityState.disabled).toBe(false);
     expect(screen.queryByTestId('verdict-reason-PASS')).toBeNull();
     a.unmount();
 
@@ -59,11 +59,11 @@ describe('M3-14: verdict buttons follow /config allowed_transitions (the seed)',
   it('a verdict the workflow does not allow is DISABLED with a visible reason, the other stays usable', async () => {
     projects.getTaskStatuses.mockResolvedValue(cfg({ READY_FOR_QA: ['FAIL', 'DEFERRED'] }));
     renderWithProviders(<QAPanel taskId={5} status="READY_FOR_QA" canAct />);
-    await waitFor(() => expect(screen.getByTestId('verdict-reason-PASS')).toHaveTextContent('Pass is not allowed from Ready for QA in this workflow.'));
-    expect(screen.getByRole('button', { name: 'Pass' }).props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByRole('button', { name: 'Fail' }).props.accessibilityState.disabled).toBe(false);
+    await waitFor(() => expect(screen.getByTestId('verdict-reason-PASS')).toHaveTextContent("Pass can't be recorded while this task is Ready for QA."));
+    expect(screen.getByRole('button', { name: 'Pass task' }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Fail task' }).props.accessibilityState.disabled).toBe(false);
     // userEvent respects `disabled` like a real finger; fireEvent walks up to the Button's own onPress prop.
-    await userEvent.setup().press(screen.getByRole('button', { name: 'Pass' }));
+    await userEvent.setup().press(screen.getByRole('button', { name: 'Pass task' }));
     await new Promise((r) => setTimeout(r, 30));
     expect(tasks.changeTaskStatus).not.toHaveBeenCalled();
   });
@@ -71,7 +71,7 @@ describe('M3-14: verdict buttons follow /config allowed_transitions (the seed)',
   it('Reopen is disabled with a reason when FAIL cannot go to REOPEN', async () => {
     projects.getTaskStatuses.mockResolvedValue(cfg({ FAIL: ['IN_PROGRESS'] }));
     renderWithProviders(<QAPanel taskId={5} status="FAIL" canAct />);
-    await waitFor(() => expect(screen.getByTestId('verdict-reason-REOPEN')).toHaveTextContent('Reopen is not allowed from Fail in this workflow.'));
+    await waitFor(() => expect(screen.getByTestId('verdict-reason-REOPEN')).toHaveTextContent("Reopen can't be recorded while this task is Fail."));
     expect(screen.getByRole('button', { name: 'Reopen' }).props.accessibilityState.disabled).toBe(true);
   });
 
@@ -79,8 +79,8 @@ describe('M3-14: verdict buttons follow /config allowed_transitions (the seed)',
     projects.getTaskStatuses.mockReturnValue(new Promise(() => undefined));
     renderWithProviders(<QAPanel taskId={5} status="READY_FOR_QA" canAct />);
     expect(await screen.findByTestId('verdict-reason-PASS')).toHaveTextContent('Loading the workflow...');
-    expect(screen.getByRole('button', { name: 'Pass' }).props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByRole('button', { name: 'Fail' }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Pass task' }).props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Fail task' }).props.accessibilityState.disabled).toBe(true);
   });
 
   it('the queue\'s subtask Pass/Fail buttons obey the subtask status transitions too', async () => {
@@ -99,7 +99,7 @@ describe('M3-14: verdict buttons follow /config allowed_transitions (the seed)',
     await screen.findByTestId('qa-sub-11');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pass Sub one' }).props.accessibilityState.disabled).toBe(true));
     expect(screen.getByRole('button', { name: 'Fail Sub one' }).props.accessibilityState.disabled).toBe(false);
-    expect(screen.getByText(/Not every verdict is allowed from Ready for QA/)).toBeTruthy();
+    expect(screen.getByText("Pass can't be recorded while this subtask is Ready for QA.")).toBeTruthy();
   });
 
   it('with the seed both subtask buttons are enabled', async () => {

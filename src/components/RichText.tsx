@@ -166,11 +166,11 @@ export function RichText(props: { html: string | null | undefined; emptyLabel?: 
 }
 
 const styles = StyleSheet.create({
-  root: { gap: 10 },
-  quote: { borderLeftWidth: 3, paddingLeft: 10, gap: 6 },
+  root: { gap: 8 },
+  quote: { borderLeftWidth: 3, paddingLeft: 12, gap: 4 },
   list: { gap: 4 },
   item: { flexDirection: 'row', gap: 8 },
   marker: { minWidth: 18 },
   itemBody: { flex: 1, gap: 4 },
-  code: { padding: 10 },
+  code: { padding: 12 },
 });

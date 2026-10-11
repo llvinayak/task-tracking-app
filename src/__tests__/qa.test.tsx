@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert, type AlertButton } from 'react-native';
+import { Alert, Text as RNText, type AlertButton } from 'react-native';
 
 import { AppError } from '@/api/errors';
 import { parseStatusConfig, parseTasks } from '@/api/models';
@@ -14,6 +14,7 @@ import { rawStatuses, rawTask, sessionUser } from '@/test/fixtures';
 import { calls, created, fail, installHttpAdapter, ok, resetHttp, useHttp } from '@/test/mockHttp';
 import { renderWithProviders } from '@/test/testUtils';
 import { resetNowProvider, setNowProvider } from '@/utils/dates';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -187,7 +188,7 @@ describe('QA queue', () => {
     render();
     expect(await screen.findByTestId('qa-row-1')).toHaveTextContent(/Owned/);
     expect(screen.getByTestId('qa-row-1')).toHaveTextContent(/QA: Quinn QA/);
-    expect(screen.getByTestId('qa-row-1')).toHaveTextContent(/Reopened 2×/);
+    expect(screen.getByTestId('qa-row-1')).toHaveTextContent(/Reopened 2x/);
     expect(screen.getByTestId('qa-row-1')).toHaveTextContent(/Sprint 9/);
     expect(screen.getByTestId('qa-row-2')).toHaveTextContent(/QA: Unassigned/);
     expect(screen.getByTestId('qa-row-2')).not.toHaveTextContent(/Reopened/);
@@ -271,6 +272,25 @@ describe('QA panel: summary, verdicts, cases', () => {
   const renderPanel = (status: string, canAct = true) =>
     renderWithProviders(<QAPanel taskId={5} status={status} canAct={canAct} />);
 
+  it('is verdict-first: verdict, then the summary, then the test cases', async () => {
+    renderPanel('READY_FOR_QA');
+    await screen.findByLabelText('Total: 4');
+    const order = screen.UNSAFE_getAllByType(RNText).map((n: { props: { children?: unknown } }) => [n.props.children].flat().filter((c) => typeof c === 'string').join(''));
+    const verdict = order.indexOf('VERDICT');
+    const summaryRate = order.findIndex((x) => x.startsWith('Pass rate'));
+    expect(verdict).toBeGreaterThan(-1);
+    expect(verdict).toBeLessThan(summaryRate);
+    expect(screen.getByTestId('qa-summary')).toBeTruthy();
+  });
+
+  it('Reopen: Cancel on the confirmation changes nothing', async () => {
+    renderPanel('FAIL');
+    fireEvent.press(await screen.findByRole('button', { name: 'Reopen' }));
+    expect(screen.getByText("Reopen increases the task's reopen count.")).toBeTruthy();
+    await press('Cancel');
+    expect(tasks.changeTaskStatus).not.toHaveBeenCalled();
+  });
+
   it('shows the four summary tiles and pass rate', async () => {
     renderPanel('READY_FOR_QA');
     expect(await screen.findByLabelText('Total: 4')).toBeTruthy();
@@ -283,10 +303,10 @@ describe('QA panel: summary, verdicts, cases', () => {
   it('READY_FOR_QA offers Pass and Fail; they PATCH the status with no note', async () => {
     tasks.changeTaskStatus.mockResolvedValue(undefined);
     renderPanel('READY_FOR_QA');
-    expect(await screen.findByRole('button', { name: 'Pass' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Fail' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Pass task' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Fail task' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
-    fireEvent.press(screen.getByRole('button', { name: 'Pass' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Pass task' }));
     await waitFor(() => expect(tasks.changeTaskStatus).toHaveBeenCalledWith(5, 'PASS', undefined));
     expect(await screen.findByText('Moved to Pass')).toBeTruthy();
   });
@@ -295,22 +315,28 @@ describe('QA panel: summary, verdicts, cases', () => {
     tasks.changeTaskStatus.mockResolvedValue(undefined);
     renderPanel('FAIL');
     fireEvent.press(await screen.findByRole('button', { name: 'Reopen' }));
+    // Reopen increases the reopen count (API: taskService), so it confirms first (plan Q5).
+    expect(lastAlert().title).toBe('Reopen this task?');
+    expect(lastAlert().message).toBe('This sends it back to development and increases its reopen count by one.');
+    expect(tasks.changeTaskStatus).not.toHaveBeenCalled();
+    expect(lastAlert().buttons.map((b) => b.text)).toEqual(['Cancel', 'Reopen']);
+    lastAlert().buttons.find((b) => b.text === 'Reopen')?.onPress?.();
     await waitFor(() => expect(tasks.changeTaskStatus).toHaveBeenCalledWith(5, 'REOPEN', undefined));
-    expect(screen.queryByRole('button', { name: 'Pass' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pass task' })).toBeNull();
   });
 
   it.each(['IN_PROGRESS', 'NOT_STARTED', 'PASS', 'REOPEN'])('status %s shows an explanation instead of verdict buttons', async (status) => {
     renderPanel(status);
     expect(await screen.findByText(/A verdict can be recorded when the task is Ready for QA/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Pass' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Fail' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pass task' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fail task' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
   });
 
   it('a verdict rejected by the server shows its message verbatim and does not sign out', async () => {
     tasks.changeTaskStatus.mockRejectedValue(new AppError({ kind: 'validation', status: 400, message: 'Cannot move from READY_FOR_QA to PASS' }));
     renderPanel('READY_FOR_QA');
-    fireEvent.press(await screen.findByRole('button', { name: 'Pass' }));
+    fireEvent.press(await screen.findByRole('button', { name: 'Pass task' }));
     expect(await screen.findByText('Cannot move from READY_FOR_QA to PASS')).toBeTruthy();
     expect(useAuthStore.getState().status).toBe('authenticated');
   });
@@ -321,7 +347,7 @@ describe('QA panel: summary, verdicts, cases', () => {
     expect(await screen.findByTestId('case-1')).toHaveTextContent(/Case 1/);
     expect(screen.getByTestId('case-1')).toHaveTextContent(/Failed/);
     expect(screen.getByTestId('case-1')).toHaveTextContent(/Notes: Broken/);
-    expect(screen.getByTestId('case-1')).toHaveTextContent(/Reopened 1×/);
+    expect(screen.getByTestId('case-1')).toHaveTextContent(/Reopened 1x/);
     expect(screen.getByTestId('case-2')).toHaveTextContent(/Passed/);
     expect(screen.getByTestId('case-3')).toHaveTextContent(/Pending/);
     expect(screen.queryByTestId('qa-verdict')).toBeNull();
@@ -454,3 +480,22 @@ describe('QA panel: summary, verdicts, cases', () => {
 function within_form(name: string) {
   return screen.getAllByRole('button', { name }).at(-1) as ReturnType<typeof screen.getByRole>;
 }
+
+
+describe('Label in Name on the QA screens', () => {
+  it('queue rows with subtask Pass/Fail', async () => {
+    qa.getQAQueue.mockImplementation(async (s) =>
+      s === 'READY_FOR_QA' ? list(row({ id: 1, title: 'A', ready_subtasks: [{ id: 11, title: 'Sub one', status: 'READY_FOR_QA' }] })) : list(),
+    );
+    renderWithProviders(<QAScreen />);
+    await screen.findByText('A');
+    expect(labelInNameViolations()).toEqual([]);
+  });
+
+  it('the panel: verdicts, case rows and the add form', async () => {
+    renderWithProviders(<QAPanel taskId={5} status="READY_FOR_QA" canAct />);
+    await screen.findByRole('button', { name: 'Pass task' });
+    fireEvent.press(screen.getByRole('button', { name: 'Add test case' }));
+    expect(labelInNameViolations()).toEqual([]);
+  });
+});

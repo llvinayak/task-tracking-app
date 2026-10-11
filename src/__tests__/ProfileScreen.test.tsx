@@ -12,6 +12,7 @@ import { buildSignOutDialog } from '@/screens/signOutDialog';
 import { LOGOUT_FAILED_MESSAGE, useAuthStore } from '@/store/authStore';
 import { menu, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
@@ -186,5 +187,14 @@ describe('buildSignOutDialog (pure)', () => {
 
   it('pending=null (check failed) behaves like nothing is pending', () => {
     expect(buildSignOutDialog({ pending: null, runningTaskTitle: null, canReview: true }).title).toBe('Sign out?');
+  });
+});
+
+
+describe('Label in Name on Profile', () => {
+  it('theme radios and Sign out', () => {
+    useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser() });
+    renderWithProviders(<ProfileScreen />);
+    expect(labelInNameViolations()).toEqual([]);
   });
 });

@@ -1,14 +1,16 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert, type AlertButton } from 'react-native';
+import { Alert, Dimensions, ScrollView, type AlertButton } from 'react-native';
 
 import * as dailyApi from '@/api/dailyReportApi';
 import { AppError } from '@/api/errors';
 import { useDirtyGuard } from '@/hooks/dailyReport';
+import { MAX_NOTE } from '@/features/myday/dayForm';
 import { MyDayScreen } from '@/features/myday/MyDayScreen';
 import { useAuthStore } from '@/store/authStore';
-import { sessionUser } from '@/test/fixtures';
+import { menu, sessionUser } from '@/test/fixtures';
 import { renderWithProviders } from '@/test/testUtils';
+import { labelInNameViolations } from '@/test/a11y';
 
 const mockNavigation = { navigate: jest.fn(), goBack: jest.fn(), canGoBack: jest.fn(() => true) };
 jest.mock('@react-navigation/native', () => ({
@@ -21,6 +23,7 @@ jest.mock('@react-navigation/native', () => ({
     R.useEffect(cb, [cb]);
   },
 }));
+jest.mock('@/api/menuApi');
 jest.mock('@/api/dailyReportApi', () => ({
   ...jest.requireActual('@/api/dailyReportApi'),
   getDailyReport: jest.fn(),
@@ -73,8 +76,13 @@ beforeEach(() => {
   useAuthStore.setState({ status: 'authenticated', token: 't', notice: null, user: sessionUser() });
   api.getDailyReport.mockImplementation(async (date?: string) => day(date ? { date } : {}));
   api.getUnreviewedEntries.mockResolvedValue([]);
+  // useMenuAccess() runs for the empty-day CTA: give the (auto-mocked) menus request a real answer, never undefined.
+  (jest.requireMock('@/api/menuApi') as { getMyMenus: jest.Mock }).getMyMenus.mockResolvedValue([]);
 });
-afterEach(() => alertSpy.mockRestore());
+afterEach(() => {
+  alertSpy.mockRestore();
+  jest.restoreAllMocks();
+});
 
 describe('My Day: date policy', () => {
   it('today omits the date param and shows the date the server returned', async () => {
@@ -365,5 +373,117 @@ describe('My Day: auto-closed review flow', () => {
     await screen.findByTestId('day-date');
     expect(screen.queryByTestId('review-card')).toBeNull();
     expect(api.getUnreviewedEntries).not.toHaveBeenCalled();
+  });
+});
+
+describe('My Day: Stage 2 layout (style-only; logic untouched)', () => {
+  it('the date stepper is two icon buttons around the date; Timesheet lives in the header, apart from the stepper', async () => {
+    render();
+    await screen.findByTestId('day-date');
+    expect(screen.getByRole('button', { name: 'Previous day' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Next day' })).toBeTruthy();
+    expect(screen.queryByText('Previous day')).toBeNull(); // icon-only: no visible text
+    expect(screen.getByRole('button', { name: 'Timesheet' })).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: 'Timesheet' }));
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('Timesheet');
+  });
+
+  it('shows "x of 8h" and an 8dp progress bar for the 8h display target', async () => {
+    render();
+    await screen.findByTestId('day-date');
+    expect(screen.getByTestId('day-totals')).toHaveTextContent(/^Total 3h of 8h/);
+    const bar = screen.getByRole('progressbar', { name: 'Progress to the 8h day' });
+    expect(bar.props.accessibilityValue).toMatchObject({ now: 38 }); // 180 / 480
+    expect(screen.queryByText('8h target met')).toBeNull();
+  });
+
+  it('says when the target is met', async () => {
+    api.getDailyReport.mockResolvedValue(
+      day({ totalMinutes: 540, items: [{ id: 1, task_id: 5, task_title: 'Fix login', project_id: 2, project_name: 'Alpha', project_color: '#3366ff', auto_minutes: 540, minutes: 540, note: '', source: 'auto', needs_review: false, session_count: 1, edited: false }] }),
+    );
+    render();
+    expect(await screen.findByText('8h target met')).toBeTruthy();
+  });
+
+  it('Save draft / Submit day sit in the sticky footer, outside the scroll area, and vanish when the day is locked', async () => {
+    const first = render();
+    await screen.findByTestId('day-date');
+    const scroll = screen.UNSAFE_getByType(ScrollView);
+    expect(scroll.findAll((n: { props: { accessibilityLabel?: string } }) => n.props.accessibilityLabel === 'Save draft')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Save draft' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Submit day' })).toBeTruthy();
+    first.unmount();
+    api.getDailyReport.mockResolvedValue(day({ status: 'submitted', submitted_at: '2026-10-10T12:00:00Z' }));
+    render();
+    await screen.findByTestId('locked-banner');
+    expect(screen.queryByRole('button', { name: 'Save draft' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Submit day' })).toBeNull();
+  });
+
+  it('the buttons stack at large text with Submit FIRST in reading order and on top (no column-reverse)', async () => {
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 360, height: 640, scale: 2, fontScale: 1.5 });
+    render();
+    await screen.findByTestId('day-date');
+    const buttons = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel);
+    expect(buttons.indexOf('Submit day')).toBeGreaterThan(-1);
+    expect(buttons.indexOf('Submit day')).toBeLessThan(buttons.indexOf('Save draft'));
+    let n = screen.getByRole('button', { name: 'Save draft' }).parent;
+    while (n && Object.assign({}, ...[n.props.style].flat(4).filter(Boolean)).flexDirection === undefined) n = n.parent;
+    expect(Object.assign({}, ...[n!.props.style].flat(4).filter(Boolean)).flexDirection).toBe('column');
+  });
+
+  it('side by side at normal text: Save draft first, then Submit day', async () => {
+    jest.spyOn(Dimensions, 'get').mockReturnValue({ width: 360, height: 640, scale: 2, fontScale: 1 });
+    render();
+    await screen.findByTestId('day-date');
+    const buttons = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel);
+    expect(buttons.indexOf('Save draft')).toBeLessThan(buttons.indexOf('Submit day'));
+  });
+
+  it('Summary, Blockers and Tomorrow\'s plan are marked optional (visual only) and notes have a counter', async () => {
+    render();
+    await screen.findByTestId('day-date');
+    expect(screen.getAllByText('(optional)')).toHaveLength(3);
+    expect(screen.getByLabelText('Summary')).toBeTruthy(); // accessible name stays the label
+    fireEvent.changeText(screen.getAllByLabelText('What did you do on this?')[0]!, 'x'.repeat(Math.floor(MAX_NOTE * 0.9)));
+    expect(screen.getByText(`${Math.floor(MAX_NOTE * 0.9)}/${MAX_NOTE}`)).toBeTruthy();
+  });
+
+  it('an empty day offers "Go to Tasks" only when Tasks is granted', async () => {
+    api.getDailyReport.mockResolvedValue(day({ items: [], totalMinutes: 0, trackedMinutes: 0 }));
+    const menus = jest.requireMock('@/api/menuApi') as { getMyMenus: jest.Mock };
+    menus.getMyMenus.mockResolvedValue([]);
+    render();
+    expect(await screen.findByText('Nothing tracked yet')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Go to Tasks' })).toBeNull();
+  });
+
+  it('with Tasks granted, "Go to Tasks" navigates there (navigation only)', async () => {
+    api.getDailyReport.mockResolvedValue(day({ items: [], totalMinutes: 0, trackedMinutes: 0 }));
+    const menus = jest.requireMock('@/api/menuApi') as { getMyMenus: jest.Mock };
+    menus.getMyMenus.mockResolvedValue([menu({ id: 2, menu_name: 'Task Board', menu_url: '/tasks' })]);
+    render();
+    fireEvent.press(await screen.findByRole('button', { name: 'Go to Tasks' }));
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('Main', { screen: 'Tasks' });
+  });
+
+  it('a successful save fires the success haptic', async () => {
+    api.saveDailyReport.mockResolvedValue(day());
+    render();
+    await screen.findByTestId('day-date');
+    fireEvent.changeText(screen.getByLabelText('Minutes for Fix login'), '25');
+    fireEvent.press(screen.getByRole('button', { name: 'Save draft' }));
+    await screen.findByText('Draft saved');
+    const haptics = jest.requireMock('expo-haptics') as { notificationAsync: jest.Mock };
+    expect(haptics.notificationAsync).toHaveBeenCalledWith('success');
+  });
+});
+
+
+describe('Label in Name on the whole My Day screen', () => {
+  it('stepper, Today, Timesheet, line editors and the footer', async () => {
+    render();
+    await screen.findByTestId('day-date');
+    expect(labelInNameViolations()).toEqual([]);
   });
 });
